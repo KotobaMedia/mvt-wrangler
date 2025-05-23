@@ -1,0 +1,23 @@
+[package]
+name = "mbtiles-wrangler"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap     = { version = "4", features = ["derive"] }
+rusqlite = "0.35"
+anyhow   = "1.0"
+
+geozero    = { version = "0.14", features = ["with-mvt"] }
+prost       = "0.11"
+bytes       = "1.4"
+pmtiles = { path = "../pmtiles-rs", features = ["mmap-async-tokio", "tilejson"] }
+tokio = { version = "1", features = ["full"] }
+async-compression = { version = "0.4", features = ["gzip"] }
+indicatif = "0.17.11"
+futures = "0.3.31"
+num_cpus = "1.16.0"
+flume = { version = "0.11.1", features = ["async"] }
+regex = "1"
+geo-types = "0.7"
+geo = "0.30"
