@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 use geozero::mvt;
 use regex::Regex;
 use serde_json::Value;
-use std::collections::HashSet;
+use std::{collections::HashSet, fmt::Display};
 
 use super::data::Operator;
 
@@ -95,28 +95,6 @@ impl ExpressionValue {
         }
     }
 
-    /// Convert to string for comparison
-    pub fn to_string(&self) -> String {
-        match self {
-            ExpressionValue::String(s) => s.clone(),
-            ExpressionValue::Number(n) => n.to_string(),
-            ExpressionValue::Float(f) => f.clone(),
-            ExpressionValue::Boolean(b) => b.to_string(),
-            ExpressionValue::Null => "null".to_string(),
-            ExpressionValue::Array(arr) => {
-                let mut result = "[".to_string();
-                for (i, item) in arr.iter().enumerate() {
-                    if i > 0 {
-                        result.push(',');
-                    }
-                    result.push_str(&item.to_string());
-                }
-                result.push(']');
-                result
-            }
-        }
-    }
-
     /// Convert to boolean for logical operations
     pub fn to_bool(&self) -> bool {
         match self {
@@ -126,6 +104,22 @@ impl ExpressionValue {
             ExpressionValue::Float(f) => f != "0" && f != "0.0",
             ExpressionValue::Null => false,
             ExpressionValue::Array(arr) => !arr.is_empty(),
+        }
+    }
+}
+
+impl Display for ExpressionValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExpressionValue::String(s) => write!(f, "{}", s),
+            ExpressionValue::Number(n) => write!(f, "{}", n),
+            ExpressionValue::Float(s) => write!(f, "{}", s),
+            ExpressionValue::Boolean(b) => write!(f, "{}", b),
+            ExpressionValue::Null => write!(f, "null"),
+            ExpressionValue::Array(arr) => {
+                let elements: Vec<String> = arr.iter().map(|v| v.to_string()).collect();
+                write!(f, "[{}]", elements.join(", "))
+            }
         }
     }
 }
@@ -174,42 +168,42 @@ impl ExpressionCompiler {
         match operator {
             // Comparison operations
             Operator::Equal => {
-                Self::ensure_arg_count(&args, 2)?;
+                Self::ensure_arg_count(args, 2)?;
                 Ok(CompiledExpression::Equal(
                     Box::new(Self::compile(&args[0])?),
                     Box::new(Self::compile(&args[1])?),
                 ))
             }
             Operator::NotEqual => {
-                Self::ensure_arg_count(&args, 2)?;
+                Self::ensure_arg_count(args, 2)?;
                 Ok(CompiledExpression::NotEqual(
                     Box::new(Self::compile(&args[0])?),
                     Box::new(Self::compile(&args[1])?),
                 ))
             }
             Operator::LessThan => {
-                Self::ensure_arg_count(&args, 2)?;
+                Self::ensure_arg_count(args, 2)?;
                 Ok(CompiledExpression::LessThan(
                     Box::new(Self::compile(&args[0])?),
                     Box::new(Self::compile(&args[1])?),
                 ))
             }
             Operator::GreaterThan => {
-                Self::ensure_arg_count(&args, 2)?;
+                Self::ensure_arg_count(args, 2)?;
                 Ok(CompiledExpression::GreaterThan(
                     Box::new(Self::compile(&args[0])?),
                     Box::new(Self::compile(&args[1])?),
                 ))
             }
             Operator::LessThanOrEqual => {
-                Self::ensure_arg_count(&args, 2)?;
+                Self::ensure_arg_count(args, 2)?;
                 Ok(CompiledExpression::LessThanOrEqual(
                     Box::new(Self::compile(&args[0])?),
                     Box::new(Self::compile(&args[1])?),
                 ))
             }
             Operator::GreaterThanOrEqual => {
-                Self::ensure_arg_count(&args, 2)?;
+                Self::ensure_arg_count(args, 2)?;
                 Ok(CompiledExpression::GreaterThanOrEqual(
                     Box::new(Self::compile(&args[0])?),
                     Box::new(Self::compile(&args[1])?),
@@ -218,28 +212,25 @@ impl ExpressionCompiler {
 
             // Logical operations
             Operator::Any => {
-                let compiled_args: Result<Vec<_>> =
-                    args.iter().map(|arg| Self::compile(arg)).collect();
+                let compiled_args: Result<Vec<_>> = args.iter().map(Self::compile).collect();
                 Ok(CompiledExpression::Any(compiled_args?))
             }
             Operator::All => {
-                let compiled_args: Result<Vec<_>> =
-                    args.iter().map(|arg| Self::compile(arg)).collect();
+                let compiled_args: Result<Vec<_>> = args.iter().map(Self::compile).collect();
                 Ok(CompiledExpression::All(compiled_args?))
             }
             Operator::None => {
-                let compiled_args: Result<Vec<_>> =
-                    args.iter().map(|arg| Self::compile(arg)).collect();
+                let compiled_args: Result<Vec<_>> = args.iter().map(Self::compile).collect();
                 Ok(CompiledExpression::None(compiled_args?))
             }
             Operator::Not => {
-                Self::ensure_arg_count(&args, 1)?;
+                Self::ensure_arg_count(args, 1)?;
                 Ok(CompiledExpression::Not(Box::new(Self::compile(&args[0])?)))
             }
 
             // Membership operations
             Operator::In => {
-                Self::ensure_arg_count(&args, 2)?;
+                Self::ensure_arg_count(args, 2)?;
                 let expr = Self::compile(&args[0])?;
                 let values = Self::compile(&args[1])?;
                 let values =
@@ -253,7 +244,7 @@ impl ExpressionCompiler {
 
             // String operations
             Operator::StartsWith => {
-                Self::ensure_arg_count(&args, 2)?;
+                Self::ensure_arg_count(args, 2)?;
                 let expr = Self::compile(&args[0])?;
                 let prefix = args[1]
                     .as_str()
@@ -264,7 +255,7 @@ impl ExpressionCompiler {
                 ))
             }
             Operator::EndsWith => {
-                Self::ensure_arg_count(&args, 2)?;
+                Self::ensure_arg_count(args, 2)?;
                 let expr = Self::compile(&args[0])?;
                 let suffix = args[1]
                     .as_str()
@@ -275,7 +266,7 @@ impl ExpressionCompiler {
                 ))
             }
             Operator::RegexMatch => {
-                Self::ensure_arg_count(&args, 2)?;
+                Self::ensure_arg_count(args, 2)?;
                 let expr = Self::compile(&args[0])?;
                 let pattern = args[1]
                     .as_str()
@@ -285,7 +276,7 @@ impl ExpressionCompiler {
                 Ok(CompiledExpression::RegexMatch(Box::new(expr), regex))
             }
             Operator::RegexCapture => {
-                Self::ensure_min_arg_count(&args, 3)?;
+                Self::ensure_min_arg_count(args, 3)?;
                 let expr = Self::compile(&args[0])?;
                 let pattern = args[1]
                     .as_str()
@@ -305,13 +296,13 @@ impl ExpressionCompiler {
 
             // Value operations
             Operator::Boolean => {
-                Self::ensure_arg_count(&args, 1)?;
+                Self::ensure_arg_count(args, 1)?;
                 Ok(CompiledExpression::Boolean(Box::new(Self::compile(
                     &args[0],
                 )?)))
             }
             Operator::Literal => {
-                Self::ensure_arg_count(&args, 1)?;
+                Self::ensure_arg_count(args, 1)?;
                 Ok(CompiledExpression::Literal(
                     ExpressionValue::from_json_value(&args[0]),
                 ))
@@ -319,18 +310,18 @@ impl ExpressionCompiler {
 
             // Context operations
             Operator::Tag => {
-                Self::ensure_arg_count(&args, 1)?;
+                Self::ensure_arg_count(args, 1)?;
                 let tag_name = args[0]
                     .as_str()
                     .ok_or_else(|| anyhow!("Tag operator requires string argument"))?;
                 Ok(CompiledExpression::Tag(tag_name.to_string()))
             }
             Operator::Key => {
-                Self::ensure_arg_count(&args, 0)?;
+                Self::ensure_arg_count(args, 0)?;
                 Ok(CompiledExpression::Key)
             }
             Operator::Type => {
-                Self::ensure_arg_count(&args, 0)?;
+                Self::ensure_arg_count(args, 0)?;
                 Ok(CompiledExpression::Type)
             }
         }

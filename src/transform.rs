@@ -63,7 +63,7 @@ pub fn transform_tile(
             .map(|fc| {
                 fc.features
                     .iter()
-                    .map(|f| {
+                    .filter_map(|f| {
                         let mut feature = f.clone();
                         let tile_geometry = project_to_tile(&feature.geometry, coords, extent);
                         feature.geometry = tile_geometry;
@@ -73,10 +73,9 @@ pub fn transform_tile(
                             None
                         }
                     })
-                    .flatten()
                     .collect::<Vec<_>>()
             })
-            .unwrap_or(vec![]);
+            .unwrap_or_default();
 
         let mut keys: Vec<String> = Vec::with_capacity(layer.keys.len());
         let mut values: Vec<Value> = Vec::with_capacity(layer.values.len());
@@ -114,7 +113,7 @@ pub fn transform_tile(
                 .collect::<Vec<_>>();
 
             let mut ctx = EvaluationContext::new(&layer.name, tag_hashmap.clone())
-                .with_geometry_type(&feature_geom_shape);
+                .with_geometry_type(feature_geom_shape);
 
             let mut should_remove_filter = false;
             for f in &intersecting_filters {

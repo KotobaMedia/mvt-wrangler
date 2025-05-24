@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
     let tile_compression = header.tile_compression;
 
     // Insert metadata
-    metadata::insert_metadata(&mut out_conn, &metadata, &header)?;
+    metadata::insert_metadata(&mut out_conn, &metadata, header)?;
 
     processing::process_tiles(&pmtiles_path, out_conn, tile_compression, fc).await?;
 
