@@ -37,7 +37,7 @@ Expressions use a Maplibre Style Specification-inspired filter using JSON array 
 | Logical    | `any`, `all`, `none`, `not`                                                               |
 | Membership | `in`, `not-in`                                                                            |
 | String     | `starts-with`, `ends-with`, `regex-match`, `regex-capture`                                |
-| Casting    | `boolean`, `literal`                                                                      |
+| Casting    | `boolean`, `literal`, `string`                                                            |
 | Context    | `tag` (feature property lookup), `key` (current tag key), `$type` (feature geometry type) |
 
 ### Common Patterns

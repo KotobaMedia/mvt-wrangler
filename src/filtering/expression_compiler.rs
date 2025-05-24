@@ -114,7 +114,22 @@ impl ExpressionCompiler {
 
                 Self::compile_operator(operator, args)
             }
-            _ => Err(anyhow!("Expression must be an array")),
+            // Handle all literal values
+            Value::String(s) => Ok(CompiledExpression::Literal(ExpressionValue::String(
+                s.clone(),
+            ))),
+            Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    Ok(CompiledExpression::Literal(ExpressionValue::Number(i)))
+                } else {
+                    Ok(CompiledExpression::Literal(ExpressionValue::Float(
+                        n.to_string(),
+                    )))
+                }
+            }
+            Value::Bool(b) => Ok(CompiledExpression::Literal(ExpressionValue::Boolean(*b))),
+            Value::Null => Ok(CompiledExpression::Literal(ExpressionValue::Null)),
+            Value::Object(_) => Err(anyhow!("Object expressions are not supported")),
         }
     }
 
