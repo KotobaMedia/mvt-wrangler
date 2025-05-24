@@ -1,3 +1,4 @@
+use super::expression_compiler::{CompiledExpression, ExpressionCompiler, ExpressionValue};
 use anyhow::{Result, anyhow};
 use geojson::Geometry;
 use serde::{Deserialize, Serialize};
@@ -36,6 +37,32 @@ pub struct LayerFilter {
     pub feature: Option<Expression>,
     /// Expression to remove specific tags
     pub tag: Option<Expression>,
+}
+
+impl LayerFilter {
+    /// Compile the filter expressions for efficient evaluation
+    pub fn compile(&self) -> Result<CompiledLayerFilter> {
+        let feature = if let Some(ref expr) = self.feature {
+            Some(ExpressionCompiler::compile(expr)?)
+        } else {
+            None
+        };
+
+        let tag = if let Some(ref expr) = self.tag {
+            Some(ExpressionCompiler::compile(expr)?)
+        } else {
+            None
+        };
+
+        Ok(CompiledLayerFilter { feature, tag })
+    }
+}
+
+/// Compiled version of LayerFilter for efficient evaluation
+#[derive(Debug, Clone)]
+pub struct CompiledLayerFilter {
+    pub feature: Option<CompiledExpression>,
+    pub tag: Option<CompiledExpression>,
 }
 
 /// Represents a filter expression using JSON array syntax
@@ -158,6 +185,18 @@ impl FilterFeature {
         }
 
         Ok(())
+    }
+
+    /// Compile all layer filters for efficient evaluation
+    pub fn compile_layers(&self) -> Result<HashMap<String, CompiledLayerFilter>> {
+        let mut compiled_layers = HashMap::new();
+
+        for (layer_name, layer_filter) in &self.properties.layers {
+            let compiled = layer_filter.compile()?;
+            compiled_layers.insert(layer_name.clone(), compiled);
+        }
+
+        Ok(compiled_layers)
     }
 }
 

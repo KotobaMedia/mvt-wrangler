@@ -11,7 +11,8 @@ anyhow   = "1.0"
 geozero    = { version = "0.14", features = ["with-mvt"] }
 prost       = "0.11"
 bytes       = "1.4"
-pmtiles = { path = "../pmtiles-rs", features = ["mmap-async-tokio", "tilejson"] }
+# pmtiles = { path = "../pmtiles-rs", features = ["mmap-async-tokio", "tilejson"] }
+pmtiles = { git = "https://github.com/KotobaMedia/pmtiles-rs.git", branch = "enumerate-entries", features = ["mmap-async-tokio", "tilejson"] }
 tokio = { version = "1", features = ["full"] }
 async-compression = { version = "0.4", features = ["gzip"] }
 indicatif = "0.17.11"

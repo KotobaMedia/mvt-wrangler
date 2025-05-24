@@ -1,4 +1,4 @@
-use crate::filtering::{data::FilterCollection, executor::FilterExecutor};
+use crate::filtering::data::FilterCollection;
 use crate::processing::TileCoordinates;
 use anyhow::{Context, Result};
 use geo::{BoundingRect, Coord, Intersects, MapCoords};
@@ -178,86 +178,88 @@ pub fn transform_tile_dynamic(
     data: &[u8],
     filter_collection: Option<&FilterCollection>,
 ) -> Result<Vec<u8>> {
-    // decode the entire tile from bytes
-    let mut tile =
-        Tile::decode(data).with_context(|| format!("Failed to decode MVT tile: {}", coords))?;
+    unimplemented!("Dynamic filtering not implemented yet");
 
-    for layer in &mut tile.layers {
-        let extent = layer.extent.unwrap_or(4096);
-        // Create filter executor if filters are provided
-        let mut filter_executor = filter_collection.map(|fc| FilterExecutor::new(fc.clone()));
+    // // decode the entire tile from bytes
+    // let mut tile =
+    //     Tile::decode(data).with_context(|| format!("Failed to decode MVT tile: {}", coords))?;
 
-        let mut keys: Vec<String> = Vec::with_capacity(layer.keys.len());
-        let mut values: Vec<Value> = Vec::with_capacity(layer.values.len());
-        let mut features: Vec<Feature> = Vec::with_capacity(layer.features.len());
+    // for layer in &mut tile.layers {
+    //     let extent = layer.extent.unwrap_or(4096);
+    //     // Create filter executor if filters are provided
+    //     let mut filter_executor = filter_collection.map(|fc| FilterExecutor::new(fc.clone()));
 
-        for feature in layer.features.drain(..) {
-            let mut feature = feature;
+    //     let mut keys: Vec<String> = Vec::with_capacity(layer.keys.len());
+    //     let mut values: Vec<Value> = Vec::with_capacity(layer.values.len());
+    //     let mut features: Vec<Feature> = Vec::with_capacity(layer.features.len());
 
-            // Convert feature to geometry for filtering
-            let geometry = feature.to_geo()?;
+    //     for feature in layer.features.drain(..) {
+    //         let mut feature = feature;
 
-            // Apply dynamic filtering if available
-            if let Some(ref mut executor) = filter_executor {
-                let (keep_feature, filtered_tags) = executor.apply_feature_filters(
-                    &feature,
-                    &geometry,
-                    &layer.name,
-                    &layer.keys,
-                    &layer.values,
-                )?;
+    //         // Convert feature to geometry for filtering
+    //         let geometry = feature.to_geo()?;
 
-                if !keep_feature {
-                    continue; // Skip this feature
-                }
+    //         // Apply dynamic filtering if available
+    //         if let Some(ref mut executor) = filter_executor {
+    //             let (keep_feature, filtered_tags) = executor.apply_feature_filters(
+    //                 &feature,
+    //                 &geometry,
+    //                 &layer.name,
+    //                 &layer.keys,
+    //                 &layer.values,
+    //             )?;
 
-                // Update feature tags with filtered ones
-                feature.tags = filtered_tags;
-            }
+    //             if !keep_feature {
+    //                 continue; // Skip this feature
+    //             }
 
-            // Rebuild the keys and values vectors with only the tags that remain
-            let mut new_tags: Vec<u32> = Vec::with_capacity(feature.tags.len());
-            for tags in feature.tags.chunks_exact(2) {
-                let key_index = tags[0] as usize;
-                let value_index = tags[1] as usize;
+    //             // Update feature tags with filtered ones
+    //             feature.tags = filtered_tags;
+    //         }
 
-                if key_index >= layer.keys.len() || value_index >= layer.values.len() {
-                    continue; // Skip invalid indices
-                }
+    //         // Rebuild the keys and values vectors with only the tags that remain
+    //         let mut new_tags: Vec<u32> = Vec::with_capacity(feature.tags.len());
+    //         for tags in feature.tags.chunks_exact(2) {
+    //             let key_index = tags[0] as usize;
+    //             let value_index = tags[1] as usize;
 
-                let key = &layer.keys[key_index];
-                let value = &layer.values[value_index];
+    //             if key_index >= layer.keys.len() || value_index >= layer.values.len() {
+    //                 continue; // Skip invalid indices
+    //             }
 
-                // Add the key and value to the new vectors if not already present
-                let key_idx = {
-                    if let Some(idx) = keys.iter().position(|k| k == key) {
-                        idx
-                    } else {
-                        keys.push(key.clone());
-                        keys.len() - 1
-                    }
-                };
-                let value_idx = {
-                    if let Some(idx) = values.iter().position(|v| v == value) {
-                        idx
-                    } else {
-                        values.push(value.clone());
-                        values.len() - 1
-                    }
-                };
-                new_tags.push(key_idx as u32);
-                new_tags.push(value_idx as u32);
-            }
+    //             let key = &layer.keys[key_index];
+    //             let value = &layer.values[value_index];
 
-            feature.tags = new_tags;
-            features.push(feature);
-        }
+    //             // Add the key and value to the new vectors if not already present
+    //             let key_idx = {
+    //                 if let Some(idx) = keys.iter().position(|k| k == key) {
+    //                     idx
+    //                 } else {
+    //                     keys.push(key.clone());
+    //                     keys.len() - 1
+    //                 }
+    //             };
+    //             let value_idx = {
+    //                 if let Some(idx) = values.iter().position(|v| v == value) {
+    //                     idx
+    //                 } else {
+    //                     values.push(value.clone());
+    //                     values.len() - 1
+    //                 }
+    //             };
+    //             new_tags.push(key_idx as u32);
+    //             new_tags.push(value_idx as u32);
+    //         }
 
-        layer.keys = keys;
-        layer.values = values;
-        layer.features = features;
-    }
+    //         feature.tags = new_tags;
+    //         features.push(feature);
+    //     }
 
-    // re-encode to a fresh Vec<u8>
-    Ok(tile.encode_to_vec())
+    //     layer.keys = keys;
+    //     layer.values = values;
+    //     layer.features = features;
+    // }
+
+    // // re-encode to a fresh Vec<u8>
+    // Ok(tile.encode_to_vec())
 }
