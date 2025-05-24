@@ -1,3 +1,4 @@
+use crate::processing::TileCoordinates;
 use anyhow::{Context, Result};
 use geo::{BoundingRect, Coord, Intersects, MapCoords};
 use geo_types::Geometry;
@@ -11,8 +12,6 @@ use geozero::{
 use prost::Message as _;
 use regex::Regex;
 use std::sync::OnceLock;
-
-use crate::processing::TileCoordinates;
 
 static NAME_MATCHER: OnceLock<Regex> = OnceLock::new();
 

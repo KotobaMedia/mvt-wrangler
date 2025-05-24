@@ -7,6 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod filtering;
 mod metadata;
 mod processing;
 mod transform;
