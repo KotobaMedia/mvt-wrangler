@@ -1,4 +1,5 @@
 use anyhow::{Result, anyhow};
+use geozero::mvt;
 use regex::Regex;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -49,6 +50,7 @@ pub enum ExpressionValue {
     Float(String), // Store as string to maintain precision and enable hashing
     Boolean(bool),
     Null,
+    Array(Vec<ExpressionValue>),
 }
 
 impl ExpressionValue {
@@ -65,7 +67,31 @@ impl ExpressionValue {
             }
             Value::Bool(b) => ExpressionValue::Boolean(*b),
             Value::Null => ExpressionValue::Null,
+            Value::Array(arr) => {
+                ExpressionValue::Array(arr.iter().map(ExpressionValue::from_json_value).collect())
+            }
             _ => ExpressionValue::String(value.to_string()),
+        }
+    }
+
+    /// Convert from mvt::tile::Value
+    pub fn from_mvt_value(value: &mvt::tile::Value) -> Self {
+        if let Some(s) = &value.string_value {
+            ExpressionValue::String(s.to_string())
+        } else if let Some(i) = value.int_value {
+            ExpressionValue::Number(i)
+        } else if let Some(u) = value.uint_value {
+            ExpressionValue::Number(u as i64)
+        } else if let Some(i) = value.sint_value {
+            ExpressionValue::Number(i)
+        } else if let Some(f) = value.float_value {
+            ExpressionValue::Float(f.to_string())
+        } else if let Some(d) = value.double_value {
+            ExpressionValue::Float(d.to_string())
+        } else if let Some(b) = value.bool_value {
+            ExpressionValue::Boolean(b)
+        } else {
+            ExpressionValue::Null
         }
     }
 
@@ -77,6 +103,17 @@ impl ExpressionValue {
             ExpressionValue::Float(f) => f.clone(),
             ExpressionValue::Boolean(b) => b.to_string(),
             ExpressionValue::Null => "null".to_string(),
+            ExpressionValue::Array(arr) => {
+                let mut result = "[".to_string();
+                for (i, item) in arr.iter().enumerate() {
+                    if i > 0 {
+                        result.push(',');
+                    }
+                    result.push_str(&item.to_string());
+                }
+                result.push(']');
+                result
+            }
         }
     }
 
@@ -88,6 +125,7 @@ impl ExpressionValue {
             ExpressionValue::Number(n) => *n != 0,
             ExpressionValue::Float(f) => f != "0" && f != "0.0",
             ExpressionValue::Null => false,
+            ExpressionValue::Array(arr) => !arr.is_empty(),
         }
     }
 }
@@ -203,7 +241,13 @@ impl ExpressionCompiler {
             Operator::In => {
                 Self::ensure_arg_count(&args, 2)?;
                 let expr = Self::compile(&args[0])?;
-                let values = Self::compile_value_set(&args[1])?;
+                let values = Self::compile(&args[1])?;
+                let values =
+                    if let CompiledExpression::Literal(ExpressionValue::Array(arr)) = values {
+                        arr.into_iter().collect()
+                    } else {
+                        return Err(anyhow!("In operator requires an array of values"));
+                    };
                 Ok(CompiledExpression::In(Box::new(expr), values))
             }
 
@@ -292,17 +336,6 @@ impl ExpressionCompiler {
         }
     }
 
-    fn compile_value_set(value: &Value) -> Result<HashSet<ExpressionValue>> {
-        match value {
-            Value::Array(arr) => Ok(arr.iter().map(ExpressionValue::from_json_value).collect()),
-            _ => {
-                let mut set = HashSet::new();
-                set.insert(ExpressionValue::from_json_value(value));
-                Ok(set)
-            }
-        }
-    }
-
     fn ensure_arg_count(args: &[Value], expected: usize) -> Result<()> {
         if args.len() != expected {
             return Err(anyhow!(
@@ -362,7 +395,11 @@ mod tests {
 
     #[test]
     fn test_compile_membership_in() {
-        let expr = json!(["in", ["tag", "kind"], ["park", "school", "hospital"]]);
+        let expr = json!([
+            "in",
+            ["tag", "kind"],
+            ["literal", ["park", "school", "hospital"]]
+        ]);
         let compiled = ExpressionCompiler::compile(&expr).unwrap();
 
         match compiled {

@@ -1,6 +1,5 @@
-use anyhow::{Result, anyhow};
-use regex::Regex;
-use serde_json::Value;
+use anyhow::Result;
+use geozero::mvt::tile::Value;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
@@ -9,6 +8,8 @@ use super::expression_compiler::{CompiledExpression, ExpressionValue};
 /// Context for expression evaluation
 #[derive(Debug)]
 pub struct EvaluationContext {
+    /// Layer name
+    pub layer_name: String,
     /// Feature properties/tags
     pub properties: HashMap<String, Value>,
     /// Current tag key being processed (for key-based operations)
@@ -18,21 +19,22 @@ pub struct EvaluationContext {
 }
 
 impl EvaluationContext {
-    pub fn new(properties: HashMap<String, Value>) -> Self {
+    pub fn new(layer_name: &str, properties: HashMap<String, Value>) -> Self {
         Self {
+            layer_name: layer_name.to_string(),
             properties,
             current_key: None,
             geometry_type: None,
         }
     }
 
-    pub fn with_current_key(mut self, key: String) -> Self {
-        self.current_key = Some(key);
+    pub fn with_current_key(mut self, key: &str) -> Self {
+        self.current_key = Some(key.to_string());
         self
     }
 
-    pub fn with_geometry_type(mut self, geometry_type: String) -> Self {
-        self.geometry_type = Some(geometry_type);
+    pub fn with_geometry_type(mut self, geometry_type: &str) -> Self {
+        self.geometry_type = Some(geometry_type.to_string());
         self
     }
 }
@@ -171,8 +173,8 @@ impl ExpressionExecutor {
 
             // Context operations
             CompiledExpression::Tag(tag_name) => {
-                if let Some(value) = context.properties.get(tag_name) {
-                    Ok(ExpressionValue::from_json_value(value))
+                if let Some(value) = context.properties.get(tag_name.as_str()) {
+                    Ok(ExpressionValue::from_mvt_value(value))
                 } else {
                     Ok(ExpressionValue::Null)
                 }
@@ -243,20 +245,67 @@ impl ExpressionExecutor {
 mod tests {
     use super::super::expression_compiler::ExpressionCompiler;
     use super::*;
+    use geozero::mvt::tile::Value;
     use serde_json::json;
     use std::collections::HashMap;
 
     fn create_test_context() -> EvaluationContext {
-        let mut properties = HashMap::new();
-        properties.insert("name".to_string(), json!("Central Park"));
-        properties.insert("kind".to_string(), json!("park"));
-        properties.insert("area".to_string(), json!(3.41));
-        properties.insert("public".to_string(), json!(true));
-        properties.insert("capacity".to_string(), json!(1000));
+        let name: Value = Value {
+            string_value: Some("Central Park".to_string()),
+            float_value: None,
+            double_value: None,
+            int_value: None,
+            uint_value: None,
+            sint_value: None,
+            bool_value: None,
+        };
+        let kind: Value = Value {
+            string_value: Some("park".to_string()),
+            float_value: None,
+            double_value: None,
+            int_value: None,
+            uint_value: None,
+            sint_value: None,
+            bool_value: None,
+        };
+        let area: Value = Value {
+            string_value: None,
+            float_value: None,
+            double_value: Some(3.41),
+            int_value: None,
+            uint_value: None,
+            sint_value: None,
+            bool_value: None,
+        };
+        let public: Value = Value {
+            string_value: None,
+            float_value: None,
+            double_value: None,
+            int_value: None,
+            uint_value: None,
+            sint_value: None,
+            bool_value: Some(true),
+        };
+        let capacity: Value = Value {
+            string_value: None,
+            float_value: None,
+            double_value: None,
+            int_value: None,
+            uint_value: None,
+            sint_value: Some(1000),
+            bool_value: None,
+        };
 
-        EvaluationContext::new(properties)
-            .with_geometry_type("Polygon".to_string())
-            .with_current_key("name:en".to_string())
+        let mut properties = HashMap::new();
+        properties.insert("name".to_string(), name);
+        properties.insert("kind".to_string(), kind);
+        properties.insert("area".to_string(), area);
+        properties.insert("public".to_string(), public);
+        properties.insert("capacity".to_string(), capacity);
+
+        EvaluationContext::new("test", properties)
+            .with_geometry_type("Polygon")
+            .with_current_key("name:en")
     }
 
     #[test]
@@ -331,13 +380,26 @@ mod tests {
         let context = create_test_context();
 
         // Test IN operation
-        let expr_json = json!(["in", ["tag", "kind"], ["park", "school", "hospital"]]);
+        let expr_json = json!([
+            "in",
+            ["tag", "kind"],
+            ["literal", ["park", "school", "hospital"]]
+        ]);
         let compiled = ExpressionCompiler::compile(&expr_json).unwrap();
         let result = ExpressionExecutor::evaluate_bool(&compiled, &context).unwrap();
         assert!(result);
 
         // Test NOT IN operation
-        let expr_json = json!(["!", ["in", ["tag", "kind"], ["school", "hospital"]]]);
+        let expr_json = json!([
+            "!",
+            ["in", ["tag", "kind"], ["literal", ["school", "hospital"]]]
+        ]);
+        let compiled = ExpressionCompiler::compile(&expr_json).unwrap();
+        let result = ExpressionExecutor::evaluate_bool(&compiled, &context).unwrap();
+        assert!(result);
+
+        // Test IN operation with null
+        let expr_json = json!(["in", null, ["literal", [null, "school", "hospital"]]]);
         let compiled = ExpressionCompiler::compile(&expr_json).unwrap();
         let result = ExpressionExecutor::evaluate_bool(&compiled, &context).unwrap();
         assert!(result);
@@ -377,7 +439,7 @@ mod tests {
         assert!(result);
 
         // Test type operation
-        let expr_json = json!(["==", ["$type"], "Polygon"]);
+        let expr_json = json!(["==", ["type"], "Polygon"]);
         let compiled = ExpressionCompiler::compile(&expr_json).unwrap();
         let result = ExpressionExecutor::evaluate_bool(&compiled, &context).unwrap();
         assert!(result);
@@ -436,5 +498,49 @@ mod tests {
         let result = ExpressionExecutor::evaluate(&compiled, &context).unwrap();
 
         assert_eq!(result, ExpressionValue::String("Central".to_string()));
+    }
+
+    #[test]
+    fn test_complex_regex_capture_filter() {
+        let mut context = create_test_context();
+
+        // Complex filter: keys starting with "name" but excluding null and "ja" language codes
+        let expr_json = json!([
+            "all",
+            ["starts-with", ["key"], "name"],
+            [
+                "not",
+                [
+                    "in",
+                    ["regex-capture", ["key"], "^name:?(.*)$", 1],
+                    ["literal", ["", "ja"]]
+                ]
+            ]
+        ]);
+
+        let compiled = ExpressionCompiler::compile(&expr_json).unwrap();
+        let result = ExpressionExecutor::evaluate_bool(&compiled, &context).unwrap();
+
+        // Should be true because:
+        // 1. Key "name:en" starts with "name" ✓
+        // 2. Regex capture extracts "en" from "name:en"
+        // 3. "en" is not in [null, "ja"] ✓
+        assert!(result);
+
+        context = context.with_current_key("name:ja");
+        let result = ExpressionExecutor::evaluate_bool(&compiled, &context).unwrap();
+        // Should be false because:
+        // 1. Key "name:ja" starts with "name" ✓
+        // 2. Regex capture extracts "ja" from "name:ja"
+        // 3. "ja" is in [null, "ja"] ✗
+        assert!(!result);
+
+        context = context.with_current_key("name");
+        let result = ExpressionExecutor::evaluate_bool(&compiled, &context).unwrap();
+        // Should be false because:
+        // 1. Key "name" does starts with "name" ✓
+        // 2. Regex capture extracts null from "name"
+        // 3. null is in [null, "ja"] ✗
+        assert!(!result);
     }
 }

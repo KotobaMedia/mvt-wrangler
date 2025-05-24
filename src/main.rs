@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use pmtiles::async_reader::AsyncPmTilesReader;
 use rusqlite::Connection;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::fs;
 
 mod filtering;

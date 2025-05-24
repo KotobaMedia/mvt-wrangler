@@ -1,6 +1,5 @@
 use anyhow::Result;
 use async_compression::tokio::write::GzipEncoder;
-use geo_types::Geometry;
 use indicatif::{ProgressBar, ProgressStyle};
 use pmtiles::{MmapBackend, async_reader::AsyncPmTilesReader};
 use rusqlite::params;

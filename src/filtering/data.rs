@@ -1,4 +1,4 @@
-use super::expression_compiler::{CompiledExpression, ExpressionCompiler, ExpressionValue};
+use super::expression_compiler::{CompiledExpression, ExpressionCompiler};
 use anyhow::{Result, anyhow};
 use geojson::Geometry;
 use serde::{Deserialize, Serialize};
@@ -101,7 +101,7 @@ pub enum Operator {
     // Context
     Tag,  // feature property lookup
     Key,  // current tag key
-    Type, // feature geometry type ($type)
+    Type, // feature geometry type (type)
 }
 
 impl Operator {
@@ -128,7 +128,7 @@ impl Operator {
             "literal" => Ok(Operator::Literal),
             "tag" => Ok(Operator::Tag),
             "key" => Ok(Operator::Key),
-            "$type" => Ok(Operator::Type),
+            "type" => Ok(Operator::Type),
             _ => Err(anyhow!("Unknown operator: {}", s)),
         }
     }
@@ -318,7 +318,7 @@ mod tests {
         assert!(Operator::from_str("==").is_ok());
         assert!(Operator::from_str("in").is_ok());
         assert!(Operator::from_str("starts-with").is_ok());
-        assert!(Operator::from_str("$type").is_ok());
+        assert!(Operator::from_str("type").is_ok());
         assert!(Operator::from_str("invalid-op").is_err());
     }
 
@@ -413,8 +413,8 @@ mod tests {
                   "*": {
                     "feature": [
                       "any",
-                      ["==", "$type", "Point"],
-                      ["==", "$type", "LineString"]
+                      ["==", ["type"], "Point"],
+                      ["==", ["type"], "LineString"]
                     ],
                     "tag": [
                       "regex-capture",
@@ -473,5 +473,52 @@ mod tests {
             parsed.features[0].properties.id,
             Some("test-filter".to_string())
         );
+    }
+}
+
+impl CompiledFilterFeature {
+    /// Check if this feature should be removed based on its feature filters
+    /// Returns true if the feature should be removed (filtered out)
+    pub fn should_remove_feature(
+        &self,
+        context: &super::executor::EvaluationContext,
+    ) -> Result<bool> {
+        // Check if there's a layer filter for this specific layer
+        if let Some(layer_filter) = self.layers.get(&context.layer_name) {
+            if let Some(ref feature_expr) = layer_filter.feature {
+                return super::executor::ExpressionExecutor::evaluate_bool(feature_expr, context);
+            }
+        }
+
+        // Check if there's a wildcard layer filter
+        if let Some(layer_filter) = self.layers.get("*") {
+            if let Some(ref feature_expr) = layer_filter.feature {
+                return super::executor::ExpressionExecutor::evaluate_bool(feature_expr, context);
+            }
+        }
+
+        // No matching filter found, don't remove the feature
+        Ok(false)
+    }
+
+    /// Check if a specific tag should be removed
+    /// Returns true if the tag should be removed (filtered out)
+    pub fn should_remove_tag(&self, context: &super::executor::EvaluationContext) -> Result<bool> {
+        // Check if there's a layer filter for this specific layer
+        if let Some(layer_filter) = self.layers.get(&context.layer_name) {
+            if let Some(ref tag_expr) = layer_filter.tag {
+                return super::executor::ExpressionExecutor::evaluate_bool(tag_expr, context);
+            }
+        }
+
+        // Check if there's a wildcard layer filter
+        if let Some(layer_filter) = self.layers.get("*") {
+            if let Some(ref tag_expr) = layer_filter.tag {
+                return super::executor::ExpressionExecutor::evaluate_bool(tag_expr, context);
+            }
+        }
+
+        // No matching filter found, don't remove the tag
+        Ok(false)
     }
 }

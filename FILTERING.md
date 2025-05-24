@@ -38,12 +38,12 @@ Expressions use a Maplibre Style Specification-inspired filter using JSON array 
 | Membership | `in`, `not-in`                                                                            |
 | String     | `starts-with`, `ends-with`, `regex-match`, `regex-capture`                                |
 | Casting    | `boolean`, `literal`, `string`                                                            |
-| Context    | `tag` (feature property lookup), `key` (current tag key), `$type` (feature geometry type) |
+| Context    | `tag` (feature property lookup), `key` (current tag key), `type` (feature geometry type) |
 
 ### Common Patterns
 
 * `["in", ["tag","kind"], ["literal", ["park","school"]]]`
-* `["any", ["==","$type","Point"], ["==","$type","LineString"]]`
+* `["any", ["==",["type"],"Point"], ["==",["type"],"LineString"]]`
 * `["starts-with", ["key"], "pgf:name:"]`
 * `["regex-capture", ["key"], "^name:?(.*)$", 1]`
 
@@ -53,6 +53,7 @@ For each feature in the vector tile:
 
 1. **Spatial Test**: Only evaluate filters if the feature geometry intersects the filter `geometry`.
 2. **Layer Selection**: Use `properties.layers[layerName]`, or fall back to `properties.layers["*"]`. If the layer didn't match, no filters are applied and the feature is passed through to the output.
+    * Note that this works on the first match -- `layers["*"]` will not be applied if the layer matched exactly.
 3. **Feature Filter**: If the `feature` expression exists and returns `true`, **drop** the entire feature.
 4. **Tag Filter**: If the `tag` expression exists, evaluate it for each tag key/value pair; those returning `true` are **removed**.
 
