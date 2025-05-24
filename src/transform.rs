@@ -1,20 +1,16 @@
+use crate::filtering::EvaluationContext;
+use crate::filtering::data::CompiledFilterCollection;
+use crate::processing::TileCoordinates;
 use anyhow::{Context, Result};
 use geo::{BoundingRect, Coord, Intersects, MapCoords};
 use geo_types::Geometry;
-use geozero::{
-    ToGeo,
-    mvt::{
-        Tile,
-        tile::{Feature, Value},
-    },
+use geozero::ToGeo;
+use geozero::mvt::{
+    Tile,
+    tile::{Feature, Value},
 };
 use prost::Message as _;
-use regex::Regex;
-use std::sync::OnceLock;
-
-use crate::processing::TileCoordinates;
-
-static NAME_MATCHER: OnceLock<Regex> = OnceLock::new();
+use std::collections::HashMap;
 
 fn project_to_tile(geom: &Geometry<f64>, coords: &TileCoordinates, extent: u32) -> Geometry<f64> {
     let n = 2_f64.powi(coords.z as i32);
@@ -50,14 +46,11 @@ fn bbox_intersects_tile(geom: &Geometry<f64>, extent: u32) -> bool {
 pub fn transform_tile(
     coords: &TileCoordinates,
     data: &[u8],
-    filter_geometry: Option<&Geometry>,
+    filter_collection: Option<&CompiledFilterCollection>,
 ) -> Result<Vec<u8>> {
     // decode the entire tile from bytes
     let mut tile =
         Tile::decode(data).with_context(|| format!("Failed to decode MVT tile: {}", coords))?;
-
-    // Get the regex, initializing it once
-    let name_matcher = NAME_MATCHER.get_or_init(|| Regex::new(r"^name:?(.*)$").unwrap());
 
     for layer in &mut tile.layers {
         // if the filter_geometry is provided, we need to reproject it to tile coordinates
@@ -65,17 +58,24 @@ pub fn transform_tile(
         // if it doesn't, set the filter_geometry to None
         // we do this per layer because the extent is set per layer.
         let extent = layer.extent.unwrap_or(4096);
-        let filter_geometry = filter_geometry
-            .map(|geom| {
-                // check if the geometry intersects with the tile
-                let tile_geometry = project_to_tile(geom, coords, extent);
-                if bbox_intersects_tile(&tile_geometry, extent) {
-                    Some(tile_geometry)
-                } else {
-                    None
-                }
+
+        let filter_features = filter_collection
+            .map(|fc| {
+                fc.features
+                    .iter()
+                    .filter_map(|f| {
+                        let mut feature = f.clone();
+                        let tile_geometry = project_to_tile(&feature.geometry, coords, extent);
+                        feature.geometry = tile_geometry;
+                        if bbox_intersects_tile(&feature.geometry, extent) {
+                            Some(feature)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
             })
-            .flatten();
+            .unwrap_or_default();
 
         let mut keys: Vec<String> = Vec::with_capacity(layer.keys.len());
         let mut values: Vec<Value> = Vec::with_capacity(layer.values.len());
@@ -85,37 +85,7 @@ pub fn transform_tile(
             // remove the feature from the layer
             let mut feature = feature;
 
-            // create the geometry
-            if let Some(ref filter_geometry) = filter_geometry {
-                let geometry = feature.to_geo()?;
-                // check if the geometry intersects with the filter geometry
-                if geometry.intersects(filter_geometry) {
-                    // intersection filters:
-                    // in this case, filter_geometry is a "sensitive area" geometry,
-                    // so we want to remove some features, like boundaries and place names
-                    if layer.name == "boundaries"
-                        || layer.name == "roads"
-                        || layer.name == "buildings"
-                    {
-                        // remove boundaries
-                        continue;
-                    } else if layer.name == "earth"
-                        || layer.name == "water"
-                        || layer.name == "pois"
-                        || layer.name == "places"
-                    {
-                        match geometry {
-                            Geometry::Point(_) => {
-                                // remove points
-                                continue;
-                            }
-                            _ => {} // keep the rest
-                        }
-                    }
-                }
-            }
-
-            let mut new_tags: Vec<u32> = Vec::with_capacity(feature.tags.len());
+            let mut tag_hashmap: HashMap<String, Value> = HashMap::new();
             for tags in feature.tags.chunks_exact(2) {
                 let key_index = tags[0] as usize;
                 let value_index = tags[1] as usize;
@@ -124,18 +94,50 @@ pub fn transform_tile(
                 let key = &layer.keys[key_index];
                 let value = &layer.values[value_index];
 
-                // name tag filtering
-                if let Some(captures) = name_matcher.captures(key) {
-                    let lang = captures.get(1).map_or("", |m| m.as_str());
-                    // empty means default `name` key
-                    // if the language is not empty and not "ja", skip this tag
-                    if !lang.is_empty() && lang != "ja" {
-                        continue;
+                tag_hashmap.insert(key.to_string(), value.clone());
+            }
+
+            let feature_geom = feature.to_geo()?;
+            let feature_geom_shape = match feature_geom {
+                Geometry::Point(_) => "Point",
+                Geometry::MultiPoint(_) => "Point",
+                Geometry::LineString(_) => "Line",
+                Geometry::MultiLineString(_) => "Line",
+                Geometry::Polygon(_) => "Polygon",
+                Geometry::MultiPolygon(_) => "Polygon",
+                _ => "Unknown",
+            };
+            let intersecting_filters = filter_features
+                .iter()
+                .filter(|f| feature_geom.intersects(&f.geometry))
+                .collect::<Vec<_>>();
+
+            let mut ctx = EvaluationContext::new(&layer.name, tag_hashmap.clone())
+                .with_geometry_type(feature_geom_shape);
+
+            let mut should_remove_filter = false;
+            for f in &intersecting_filters {
+                if f.should_remove_feature(&ctx)? {
+                    should_remove_filter = true;
+                    break;
+                }
+            }
+            if should_remove_filter {
+                continue; // Skip this feature
+            }
+
+            let mut new_tags: Vec<u32> = Vec::with_capacity(feature.tags.len());
+            for (key, value) in &tag_hashmap {
+                ctx = ctx.with_current_key(key);
+                let mut should_remove_tag = false;
+                for f in &intersecting_filters {
+                    if f.should_remove_tag(&ctx)? {
+                        should_remove_tag = true;
+                        break;
                     }
                 }
-                // pgf:name filtering
-                if key.starts_with("pgf:name:") {
-                    continue;
+                if should_remove_tag {
+                    continue; // Skip this tag
                 }
 
                 // add the key and value to the new vectors

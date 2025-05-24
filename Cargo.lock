@@ -543,6 +543,7 @@ version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e26f3c45b36fccc9cf2805e61d4da6bc4bbd5a3a9589b01afa3a40eff703bd79"
 dependencies = [
+ "geo-types",
  "log",
  "serde",
  "serde_json",
@@ -833,28 +834,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 
 [[package]]
-name = "mbtiles-wrangler"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-compression",
- "bytes",
- "clap",
- "flume",
- "futures",
- "geo",
- "geo-types",
- "geozero",
- "indicatif",
- "num_cpus",
- "pmtiles",
- "prost",
- "regex",
- "rusqlite",
- "tokio",
-]
-
-[[package]]
 name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -894,6 +873,31 @@ name = "multimap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5ce46fe64a9d73be07dcbe690a38ce1b293be448fd8ce1e6c1b8062c9f72c6a"
+
+[[package]]
+name = "mvt-wrangler"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-compression",
+ "bytes",
+ "clap",
+ "flume",
+ "futures",
+ "geo",
+ "geo-types",
+ "geojson",
+ "geozero",
+ "indicatif",
+ "num_cpus",
+ "pmtiles",
+ "prost",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "nanorand"
@@ -1034,6 +1038,7 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 [[package]]
 name = "pmtiles"
 version = "0.11.0"
+source = "git+https://github.com/KotobaMedia/pmtiles-rs.git?branch=enumerate-entries#13cae7417281275a9de06264b5f4e4fd3210cdae"
 dependencies = [
  "async-compression",
  "bytes",

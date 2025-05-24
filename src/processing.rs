@@ -1,18 +1,15 @@
 use anyhow::Result;
 use async_compression::tokio::write::GzipEncoder;
-use geo_types::Geometry;
-use geozero::{ToGeo, geojson::GeoJson};
 use indicatif::{ProgressBar, ProgressStyle};
 use pmtiles::{MmapBackend, async_reader::AsyncPmTilesReader};
 use rusqlite::params;
 use std::path::Path;
 use tokio::{
-    fs,
     io::{AsyncWriteExt, BufWriter},
     task::JoinSet,
 };
 
-use crate::transform::transform_tile;
+use crate::{filtering::data::CompiledFilterCollection, transform::transform_tile};
 
 #[derive(Clone)]
 pub struct TileCoordinates {
@@ -30,18 +27,8 @@ pub async fn process_tiles(
     pmtiles_path: &Path,
     mut out_conn: rusqlite::Connection,
     tile_compression: pmtiles::Compression,
-    filter_path: Option<&Path>,
+    filter_collection: Option<CompiledFilterCollection>,
 ) -> Result<()> {
-    // Parse GeoJSON filter if provided
-    let filter_geometry = if let Some(path) = filter_path {
-        let geojson_str = fs::read_to_string(path).await?;
-        let geojson = GeoJson(&geojson_str);
-        let geometry: Geometry = geojson.to_geo()?;
-        Some(geometry)
-    } else {
-        None
-    };
-
     let in_pmt = AsyncPmTilesReader::new_with_path(pmtiles_path).await?;
     let entries = in_pmt.entries().await?;
     let bar = ProgressBar::new(entries.len() as u64);
@@ -67,7 +54,7 @@ pub async fn process_tiles(
             let bar = bar.clone();
             let ins_tx = ins_tx.clone();
             let pmtiles_path = pmtiles_path.to_path_buf();
-            let filter_geometry = filter_geometry.clone();
+            let filter_collection = filter_collection.clone();
             handles.spawn(async move {
                 let in_pmt = AsyncPmTilesReader::new_with_path(pmtiles_path)
                     .await
@@ -79,7 +66,7 @@ pub async fn process_tiles(
                         &bar,
                         tile_compression,
                         &ins_tx,
-                        filter_geometry.as_ref(),
+                        filter_collection.as_ref(),
                     )
                     .await
                     {
@@ -132,14 +119,14 @@ async fn process_single_tile(
     bar: &ProgressBar,
     tile_compression: pmtiles::Compression,
     ins_tx: &tokio::sync::mpsc::UnboundedSender<(TileCoordinates, Vec<u8>)>,
-    filter_geometry: Option<&Geometry>,
+    filter_collection: Option<&CompiledFilterCollection>,
 ) -> Result<()> {
     let (z, x, y) = entry.xyz();
     bar.set_message(format!("{}/{}/{}", z, x, y));
     let coords = TileCoordinates { z, x, y };
     let data = in_pmt.get_tile_decompressed(z, x, y).await?;
     let Some(data) = data else { return Ok(()) }; // skip empty tiles
-    let new_data = transform_tile_async(&coords, &data, filter_geometry).await?;
+    let new_data = transform_tile_async(&coords, &data, filter_collection).await?;
 
     let new_data = match tile_compression {
         pmtiles::Compression::Gzip => {
@@ -162,13 +149,13 @@ async fn process_single_tile(
 async fn transform_tile_async(
     coords: &TileCoordinates,
     data: &[u8],
-    filter_geometry: Option<&Geometry>,
+    filter_collection: Option<&CompiledFilterCollection>,
 ) -> Result<Vec<u8>> {
     let coords_c = coords.clone();
     let data_c = data.to_vec();
-    let filter_geometry_c = filter_geometry.cloned();
+    let filter_collection_c = filter_collection.cloned();
     tokio::task::spawn_blocking(move || {
-        transform_tile(&coords_c, &data_c, filter_geometry_c.as_ref())
+        transform_tile(&coords_c, &data_c, filter_collection_c.as_ref())
     })
     .await?
 }

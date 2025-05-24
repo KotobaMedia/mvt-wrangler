@@ -1,7 +1,8 @@
 [package]
-name = "mbtiles-wrangler"
+name = "mvt-wrangler"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
 clap     = { version = "4", features = ["derive"] }
@@ -11,7 +12,8 @@ anyhow   = "1.0"
 geozero    = { version = "0.14", features = ["with-mvt"] }
 prost       = "0.11"
 bytes       = "1.4"
-pmtiles = { path = "../pmtiles-rs", features = ["mmap-async-tokio", "tilejson"] }
+# pmtiles = { path = "../pmtiles-rs", features = ["mmap-async-tokio", "tilejson"] }
+pmtiles = { git = "https://github.com/KotobaMedia/pmtiles-rs.git", branch = "enumerate-entries", features = ["mmap-async-tokio", "tilejson"] }
 tokio = { version = "1", features = ["full"] }
 async-compression = { version = "0.4", features = ["gzip"] }
 indicatif = "0.17.11"
@@ -21,3 +23,6 @@ flume = { version = "0.11.1", features = ["async"] }
 regex = "1"
 geo-types = "0.7"
 geo = "0.30"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+geojson = "0.24.2"
