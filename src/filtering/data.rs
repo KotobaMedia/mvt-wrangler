@@ -1,4 +1,5 @@
 use anyhow::{Result, anyhow};
+use geojson::Geometry;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -16,16 +17,8 @@ pub struct FilterCollection {
 pub struct FilterFeature {
     #[serde(rename = "type")]
     pub feature_type: String, // Should be "Feature"
-    pub geometry: GeoJsonGeometry,
+    pub geometry: Geometry,
     pub properties: FilterProperties,
-}
-
-/// GeoJSON geometry for spatial filtering
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GeoJsonGeometry {
-    #[serde(rename = "type")]
-    pub geometry_type: String,
-    pub coordinates: Value, // Keep as Value for flexibility with different geometry types
 }
 
 /// Properties containing filter rules
@@ -195,6 +188,7 @@ fn validate_expression(expr: &Expression) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use geojson::Value;
     use serde_json::json;
 
     #[test]
@@ -372,10 +366,7 @@ mod tests {
             feature_type: "FeatureCollection".to_string(),
             features: vec![FilterFeature {
                 feature_type: "Feature".to_string(),
-                geometry: GeoJsonGeometry {
-                    geometry_type: "Point".to_string(),
-                    coordinates: json!([0, 0]),
-                },
+                geometry: Geometry::new(Value::Point(vec![0.0, 0.0])),
                 properties: FilterProperties {
                     id: Some("test-filter".to_string()),
                     description: Some("Test filter".to_string()),
