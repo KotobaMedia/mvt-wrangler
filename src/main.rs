@@ -2,10 +2,8 @@ use anyhow::Result;
 use clap::Parser;
 use pmtiles::async_reader::AsyncPmTilesReader;
 use rusqlite::Connection;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
+use tokio::fs;
 
 mod filtering;
 mod metadata;
@@ -17,9 +15,12 @@ mod transform;
 struct Args {
     /// Input MBTiles file
     input: PathBuf,
+
     /// Output MBTiles file (will be overwritten if exists)
     output: PathBuf,
-    /// Optional GeoJSON file to filter features
+
+    /// Optional? GeoJSON file to filter features. Honestly, why are you using this tool if you don't want to filter?
+    /// See FILTERING.md for details on the syntax.
     #[arg(short, long)]
     filter: Option<PathBuf>,
 }
@@ -30,7 +31,7 @@ async fn main() -> Result<()> {
 
     // Remove any existing output
     if args.output.exists() {
-        fs::remove_file(&args.output)?;
+        fs::remove_file(&args.output).await?;
     }
 
     let pmtiles_path = args.input;
@@ -39,10 +40,15 @@ async fn main() -> Result<()> {
     }
 
     // Validate filter file if provided
+    let mut fc = None;
     if let Some(filter_path) = &args.filter {
-        if !Path::new(filter_path).exists() {
+        if !filter_path.exists() {
             panic!("Filter file does not exist: {}", filter_path.display());
         }
+        let filter_str = fs::read_to_string(filter_path).await?;
+        let filter_json: filtering::data::FilterCollection = serde_json::from_str(&filter_str)?;
+        let compiled = filter_json.compile()?;
+        fc = Some(compiled);
     }
 
     // Open input and new output DBs
@@ -52,13 +58,13 @@ async fn main() -> Result<()> {
     // Create the minimal MBTiles schema
     out_conn.execute_batch(
         r#"
-        PRAGMA synchronous = OFF;        -- no fsync at COMMIT  
-        PRAGMA journal_mode = OFF;       -- no rollback journal  
+        PRAGMA synchronous = OFF;        -- no fsync at COMMIT
+        PRAGMA journal_mode = OFF;       -- no rollback journal
         PRAGMA locking_mode = EXCLUSIVE;
-        PRAGMA temp_store = MEMORY;  
-        PRAGMA cache_size = -200000;      -- ~200 MB cache (negative = KB)  
-        PRAGMA mmap_size = 268435456;     -- 256 MB mmap window  
-    
+        PRAGMA temp_store = MEMORY;
+        PRAGMA cache_size = -200000;      -- ~200 MB cache (negative = KB)
+        PRAGMA mmap_size = 268435456;     -- 256 MB mmap window
+
         CREATE TABLE metadata (name TEXT, value TEXT);
         CREATE TABLE tiles (
           zoom_level INTEGER,
@@ -80,13 +86,7 @@ async fn main() -> Result<()> {
     // Insert metadata
     metadata::insert_metadata(&mut out_conn, &metadata, &header)?;
 
-    processing::process_tiles(
-        &pmtiles_path,
-        out_conn,
-        tile_compression,
-        args.filter.as_deref(),
-    )
-    .await?;
+    processing::process_tiles(&pmtiles_path, out_conn, tile_compression, fc).await?;
 
     println!("✅ Wrote transformed tiles to {}", args.output.display());
     Ok(())

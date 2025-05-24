@@ -24,7 +24,6 @@ pub enum CompiledExpression {
 
     // Membership operations
     In(Box<CompiledExpression>, HashSet<ExpressionValue>),
-    NotIn(Box<CompiledExpression>, HashSet<ExpressionValue>),
 
     // String operations
     StartsWith(Box<CompiledExpression>, String),
@@ -206,12 +205,6 @@ impl ExpressionCompiler {
                 let expr = Self::compile(&args[0])?;
                 let values = Self::compile_value_set(&args[1])?;
                 Ok(CompiledExpression::In(Box::new(expr), values))
-            }
-            Operator::NotIn => {
-                Self::ensure_arg_count(&args, 2)?;
-                let expr = Self::compile(&args[0])?;
-                let values = Self::compile_value_set(&args[1])?;
-                Ok(CompiledExpression::NotIn(Box::new(expr), values))
             }
 
             // String operations

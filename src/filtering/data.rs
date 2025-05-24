@@ -87,7 +87,6 @@ pub enum Operator {
 
     // Membership
     In,
-    NotIn,
 
     // String operations
     StartsWith,
@@ -119,8 +118,8 @@ impl Operator {
             "all" => Ok(Operator::All),
             "none" => Ok(Operator::None),
             "not" => Ok(Operator::Not),
+            "!" => Ok(Operator::Not),
             "in" => Ok(Operator::In),
-            "not-in" => Ok(Operator::NotIn),
             "starts-with" => Ok(Operator::StartsWith),
             "ends-with" => Ok(Operator::EndsWith),
             "regex-match" => Ok(Operator::RegexMatch),
@@ -160,6 +159,34 @@ impl FilterCollection {
     pub fn to_json(&self) -> Result<String> {
         Ok(serde_json::to_string_pretty(self)?)
     }
+
+    /// Compile the entire filter collection for efficient evaluation
+    pub fn compile(&self) -> Result<CompiledFilterCollection> {
+        let mut compiled_features = Vec::new();
+
+        for feature in &self.features {
+            compiled_features.push(feature.compile()?);
+        }
+
+        Ok(CompiledFilterCollection {
+            features: compiled_features,
+        })
+    }
+}
+
+/// Compiled version of FilterCollection for efficient evaluation
+#[derive(Debug, Clone)]
+pub struct CompiledFilterCollection {
+    pub features: Vec<CompiledFilterFeature>,
+}
+
+/// Compiled version of FilterFeature for efficient evaluation
+#[derive(Debug, Clone)]
+pub struct CompiledFilterFeature {
+    pub geometry: geo_types::Geometry<f64>,
+    pub id: Option<String>,
+    pub description: Option<String>,
+    pub layers: HashMap<String, CompiledLayerFilter>,
 }
 
 impl FilterFeature {
@@ -185,6 +212,18 @@ impl FilterFeature {
         }
 
         Ok(())
+    }
+
+    /// Compile the filter feature for efficient evaluation
+    pub fn compile(&self) -> Result<CompiledFilterFeature> {
+        let compiled_layers = self.compile_layers()?;
+
+        Ok(CompiledFilterFeature {
+            geometry: self.geometry.clone().try_into()?,
+            id: self.properties.id.clone(),
+            description: self.properties.description.clone(),
+            layers: compiled_layers,
+        })
     }
 
     /// Compile all layer filters for efficient evaluation

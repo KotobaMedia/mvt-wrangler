@@ -1,4 +1,4 @@
-use crate::filtering::data::FilterCollection;
+use crate::filtering::data::{CompiledFilterCollection, CompiledFilterFeature, FilterCollection};
 use crate::processing::TileCoordinates;
 use anyhow::{Context, Result};
 use geo::{BoundingRect, Coord, Intersects, MapCoords};
@@ -50,7 +50,7 @@ fn bbox_intersects_tile(geom: &Geometry<f64>, extent: u32) -> bool {
 pub fn transform_tile(
     coords: &TileCoordinates,
     data: &[u8],
-    filter_geometry: Option<&Geometry>,
+    filter_collection: Option<&CompiledFilterCollection>,
 ) -> Result<Vec<u8>> {
     // decode the entire tile from bytes
     let mut tile =
@@ -65,17 +65,37 @@ pub fn transform_tile(
         // if it doesn't, set the filter_geometry to None
         // we do this per layer because the extent is set per layer.
         let extent = layer.extent.unwrap_or(4096);
-        let filter_geometry = filter_geometry
-            .map(|geom| {
-                // check if the geometry intersects with the tile
-                let tile_geometry = project_to_tile(geom, coords, extent);
-                if bbox_intersects_tile(&tile_geometry, extent) {
-                    Some(tile_geometry)
-                } else {
-                    None
-                }
+
+        let filter_features = filter_collection
+            .and_then(|fc| Some(fc.features))
+            .map(|features| {
+                features
+                    .iter()
+                    .map(|f| {
+                        let feature = f.clone();
+                        let tile_geometry = project_to_tile(&feature.geometry, coords, extent);
+                        feature.geometry = tile_geometry;
+                        if bbox_intersects_tile(&tile_geometry, extent) {
+                            Some(feature)
+                        } else {
+                            None
+                        }
+                    })
+                    .flatten()
+                    .collect::<Vec<_>>()
             })
-            .flatten();
+            .unwrap_or(vec![]);
+        // let filter_geometry = filter_geometry
+        //     .map(|geom| {
+        //         // check if the geometry intersects with the tile
+        //         let tile_geometry = project_to_tile(geom, coords, extent);
+        //         if bbox_intersects_tile(&tile_geometry, extent) {
+        //             Some(tile_geometry)
+        //         } else {
+        //             None
+        //         }
+        //     })
+        //     .flatten();
 
         let mut keys: Vec<String> = Vec::with_capacity(layer.keys.len());
         let mut values: Vec<Value> = Vec::with_capacity(layer.values.len());
