@@ -1038,7 +1038,7 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 [[package]]
 name = "pmtiles"
 version = "0.11.0"
-source = "git+https://github.com/KotobaMedia/pmtiles-rs.git?branch=enumerate-entries#13cae7417281275a9de06264b5f4e4fd3210cdae"
+source = "git+https://github.com/KotobaMedia/pmtiles-rs.git?branch=enumerate-entries#603d66f37f8f258cb0e0991a87496d84b97095cc"
 dependencies = [
  "async-compression",
  "bytes",

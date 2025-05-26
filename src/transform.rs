@@ -101,8 +101,8 @@ pub fn transform_tile(
             let feature_geom_shape = match feature_geom {
                 Geometry::Point(_) => "Point",
                 Geometry::MultiPoint(_) => "Point",
-                Geometry::LineString(_) => "Line",
-                Geometry::MultiLineString(_) => "Line",
+                Geometry::LineString(_) => "LineString",
+                Geometry::MultiLineString(_) => "LineString",
                 Geometry::Polygon(_) => "Polygon",
                 Geometry::MultiPolygon(_) => "Polygon",
                 _ => "Unknown",

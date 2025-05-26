@@ -31,7 +31,8 @@ pub async fn process_tiles(
 ) -> Result<()> {
     let in_pmt = AsyncPmTilesReader::new_with_path(pmtiles_path).await?;
     let entries = in_pmt.entries().await?;
-    let bar = ProgressBar::new(entries.len() as u64);
+    let tile_count = entries.iter().map(|e| e.xyz().len()).sum::<usize>();
+    let bar = ProgressBar::new(tile_count as u64);
     bar.set_style(ProgressStyle::with_template(
         "[{msg}] {wide_bar} {pos:>7}/{len:7} {elapsed}/{duration}",
     )?);
@@ -121,10 +122,20 @@ async fn process_single_tile(
     ins_tx: &tokio::sync::mpsc::UnboundedSender<(TileCoordinates, Vec<u8>)>,
     filter_collection: Option<&CompiledFilterCollection>,
 ) -> Result<()> {
-    let (z, x, y) = entry.xyz();
-    bar.set_message(format!("{}/{}/{}", z, x, y));
-    let coords = TileCoordinates { z, x, y };
-    let data = in_pmt.get_tile_decompressed(z, x, y).await?;
+    let tiles = entry
+        .xyz()
+        .into_iter()
+        .map(|(z, x, y)| TileCoordinates { z, x, y })
+        .collect::<Vec<_>>();
+
+    let coords = tiles
+        .get(0)
+        .ok_or_else(|| anyhow::anyhow!("No tile coordinates found in entry: {:?}", entry))?;
+    bar.set_message(format!("{}", coords));
+
+    let data = in_pmt
+        .get_tile_decompressed(coords.z, coords.x, coords.y)
+        .await?;
     let Some(data) = data else { return Ok(()) }; // skip empty tiles
     let new_data = transform_tile_async(&coords, &data, filter_collection).await?;
 
@@ -142,7 +153,10 @@ async fn process_single_tile(
         }
     };
 
-    ins_tx.send((coords, new_data)).unwrap();
+    for tile_coords in tiles {
+        ins_tx.send((tile_coords, new_data.clone())).unwrap();
+    }
+
     Ok(())
 }
 
