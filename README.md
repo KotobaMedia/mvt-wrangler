@@ -24,8 +24,7 @@ MVT Wrangler reads PMTiles files (containing MVT data) and outputs filtered MBTi
 
 ### Prerequisites
 
-- Rust 1.87 or later
-- Cargo package manager
+- Rust (if you don't have it, [rustup](https://rustup.rs/) is the easiest way to install)
 
 ### Building from Source
 
