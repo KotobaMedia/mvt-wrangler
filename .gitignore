@@ -1,3 +1,6 @@
 /target
-*.mbtiles
-*.pmtiles
+/*.mbtiles
+/*.pmtiles
+
+/tests/fixtures/output.mbtiles
+/tests/fixtures/output_*.geojson

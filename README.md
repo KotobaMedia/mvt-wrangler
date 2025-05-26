@@ -2,6 +2,8 @@
 
 A high-performance Rust tool for processing and transforming Mapbox Vector Tiles (MVT) with advanced filtering capabilities. Apply sophisticated spatial and attribute-based filters to slim down your tiles.
 
+For example, I'm a big fan of [Protomaps' tiles generated from OpenStreetMap](https://maps.protomaps.com/builds/), but when serving tiles to Japanese customers, there are a couple things that need to be tweaked (sensitive areas, removing data that won't be shown anyways, etc..). Instead of downloading and reprocessing all the tiles from scratch, this tool takes in an already-built PMTiles archive, applies the desired filters, and outputs the filtered tiles.
+
 ## Overview
 
 MVT Wrangler reads PMTiles files (containing MVT data) and outputs filtered MBTiles databases. It provides a powerful filtering system that allows you to:
@@ -22,8 +24,7 @@ MVT Wrangler reads PMTiles files (containing MVT data) and outputs filtered MBTi
 
 ### Prerequisites
 
-- Rust 1.87 or later
-- Cargo package manager
+- Rust (if you don't have it, [rustup](https://rustup.rs/) is the easiest way to install)
 
 ### Building from Source
 
