@@ -5,24 +5,24 @@ edition = "2024"
 license = "MIT"
 
 [dependencies]
-clap     = { version = "4", features = ["derive"] }
-rusqlite = "0.35"
-anyhow   = "1.0"
-
-geozero    = { version = "0.14", features = ["with-mvt"] }
-prost       = "0.11"
-bytes       = "1.4"
-# pmtiles = { path = "../pmtiles-rs", features = ["mmap-async-tokio", "tilejson"] }
-pmtiles = { git = "https://github.com/KotobaMedia/pmtiles-rs.git", branch = "enumerate-entries", features = ["mmap-async-tokio", "tilejson"] }
-tokio = { version = "1", features = ["full"] }
+anyhow = "1.0"
 async-compression = { version = "0.4", features = ["gzip"] }
-indicatif = "0.17.11"
-futures = "0.3.31"
-num_cpus = "1.16.0"
+bytes = "1.4"
+clap = { version = "4", features = ["derive"] }
 flume = { version = "0.11.1", features = ["async"] }
-regex = "1"
-geo-types = "0.7"
+futures = "0.3.31"
 geo = "0.30"
+geo-types = "0.7"
+geojson = "0.24.2"
+geozero = { version = "0.14", features = ["with-mvt"] }
+indicatif = "0.17.11"
+num_cpus = "1.16.0"
+# pmtiles = { git = "https://github.com/KotobaMedia/pmtiles-rs.git", branch = "enumerate-entries", features = ["mmap-async-tokio", "tilejson"] }
+# pmtiles = { path = "../pmtiles-rs", features = ["mmap-async-tokio", "tilejson"] }
+pmtiles = { git = "https://github.com/stadiamaps/pmtiles-rs.git", branch = "main", features = ["mmap-async-tokio", "tilejson", "iter-async"] }
+prost = "0.11"
+regex = "1"
+rusqlite = "0.35"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-geojson = "0.24.2"
+tokio = { version = "1", features = ["full"] }

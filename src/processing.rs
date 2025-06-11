@@ -1,9 +1,10 @@
 use anyhow::Result;
 use async_compression::tokio::write::GzipEncoder;
+use futures::TryStreamExt as _;
 use indicatif::{ProgressBar, ProgressStyle};
-use pmtiles::{MmapBackend, async_reader::AsyncPmTilesReader};
+use pmtiles::{AsyncPmTilesReader, MmapBackend, TileCoord};
 use rusqlite::params;
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 use tokio::{
     io::{AsyncWriteExt, BufWriter},
     task::JoinSet,
@@ -11,16 +12,8 @@ use tokio::{
 
 use crate::{filtering::data::CompiledFilterCollection, transform::transform_tile};
 
-#[derive(Clone)]
-pub struct TileCoordinates {
-    pub z: u8,
-    pub x: u64,
-    pub y: u64,
-}
-impl std::fmt::Display for TileCoordinates {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}/{}", self.z, self.x, self.y)
-    }
+pub fn format_tile_coord(coord: &TileCoord) -> String {
+    format!("{}/{}/{}", coord.z(), coord.x(), coord.y())
 }
 
 pub async fn process_tiles(
@@ -29,9 +22,12 @@ pub async fn process_tiles(
     tile_compression: pmtiles::Compression,
     filter_collection: Option<CompiledFilterCollection>,
 ) -> Result<()> {
-    let in_pmt = AsyncPmTilesReader::new_with_path(pmtiles_path).await?;
-    let entries = in_pmt.entries().await?;
-    let tile_count = entries.iter().map(|e| e.xyz().len()).sum::<usize>();
+    let in_pmt = Arc::new(AsyncPmTilesReader::new_with_path(pmtiles_path).await?);
+    let entries = in_pmt.entries().try_collect::<Vec<_>>().await?;
+    let tile_count = entries
+        .iter()
+        .map(|e| e.iter_coords().count())
+        .sum::<usize>();
     let bar = ProgressBar::new(tile_count as u64);
     bar.set_style(ProgressStyle::with_template(
         "[{msg}] {wide_bar} {pos:>7}/{len:7} {elapsed}/{duration}",
@@ -95,10 +91,10 @@ pub async fn process_tiles(
                     .unwrap();
 
                 while let Some((coords, new_data)) = ins_rx.blocking_recv() {
-                    let TileCoordinates { z, x, y } = coords;
                     // Convert Y coordinate from XYZ to TMS format
-                    let tms_y = (1u64 << z) - 1 - y;
-                    ins.execute(params![z, x, tms_y, new_data]).unwrap();
+                    let tms_y = (1u32 << coords.z()) - 1 - coords.y();
+                    ins.execute(params![coords.z(), coords.x(), tms_y, new_data])
+                        .unwrap();
                     bar.inc(1);
                 }
             }
@@ -119,23 +115,20 @@ async fn process_single_tile(
     in_pmt: &AsyncPmTilesReader<MmapBackend>,
     bar: &ProgressBar,
     tile_compression: pmtiles::Compression,
-    ins_tx: &tokio::sync::mpsc::UnboundedSender<(TileCoordinates, Vec<u8>)>,
+    ins_tx: &tokio::sync::mpsc::UnboundedSender<(TileCoord, Vec<u8>)>,
     filter_collection: Option<&CompiledFilterCollection>,
 ) -> Result<()> {
     let tiles = entry
-        .xyz()
-        .into_iter()
-        .map(|(z, x, y)| TileCoordinates { z, x, y })
-        .collect::<Vec<_>>();
+        .iter_coords()
+        .map(|tile_id| tile_id.into())
+        .collect::<Vec<TileCoord>>();
 
     let coords = tiles
         .get(0)
         .ok_or_else(|| anyhow::anyhow!("No tile coordinates found in entry: {:?}", entry))?;
-    bar.set_message(format!("{}", coords));
+    bar.set_message(format_tile_coord(&coords));
 
-    let data = in_pmt
-        .get_tile_decompressed(coords.z, coords.x, coords.y)
-        .await?;
+    let data = in_pmt.get_tile_decompressed(*coords).await?;
     let Some(data) = data else { return Ok(()) }; // skip empty tiles
     let new_data = transform_tile_async(&coords, &data, filter_collection).await?;
 
@@ -161,7 +154,7 @@ async fn process_single_tile(
 }
 
 async fn transform_tile_async(
-    coords: &TileCoordinates,
+    coords: &TileCoord,
     data: &[u8],
     filter_collection: Option<&CompiledFilterCollection>,
 ) -> Result<Vec<u8>> {

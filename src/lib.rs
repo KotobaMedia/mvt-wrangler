@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use pmtiles::async_reader::AsyncPmTilesReader;
+use pmtiles::AsyncPmTilesReader;
 use rusqlite::Connection;
 use std::path::PathBuf;
 use tokio::fs;
@@ -13,7 +13,7 @@ mod transform;
 #[derive(Parser)]
 #[command(author, version, about)]
 pub struct Args {
-    /// Input MBTiles file
+    /// Input PMTiles file
     pub input: PathBuf,
 
     /// Output MBTiles file (will be overwritten if exists)

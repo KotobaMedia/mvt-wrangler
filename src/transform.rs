@@ -1,6 +1,6 @@
 use crate::filtering::EvaluationContext;
 use crate::filtering::data::CompiledFilterCollection;
-use crate::processing::TileCoordinates;
+use crate::processing::format_tile_coord;
 use anyhow::{Context, Result};
 use geo::{BoundingRect, Coord, Intersects, MapCoords};
 use geo_types::Geometry;
@@ -9,11 +9,12 @@ use geozero::mvt::{
     Tile,
     tile::{Feature, Value},
 };
+use pmtiles::TileCoord;
 use prost::Message as _;
 use std::collections::HashMap;
 
-fn project_to_tile(geom: &Geometry<f64>, coords: &TileCoordinates, extent: u32) -> Geometry<f64> {
-    let n = 2_f64.powi(coords.z as i32);
+fn project_to_tile(geom: &Geometry<f64>, coords: &TileCoord, extent: u32) -> Geometry<f64> {
+    let n = 2_f64.powi(coords.z() as i32);
     geom.map_coords(|Coord { x, y }| {
         // 1. fractional tile coords
         let x_frac = (x + 180.0) / 360.0 * n;
@@ -21,8 +22,8 @@ fn project_to_tile(geom: &Geometry<f64>, coords: &TileCoordinates, extent: u32) 
         let y_frac =
             (1.0 - (lat_rad.tan() + 1.0 / lat_rad.cos()).ln() / std::f64::consts::PI) / 2.0 * n;
         // 2. local tile coords
-        let x_local = (x_frac - coords.x as f64) * extent as f64;
-        let y_local = (y_frac - coords.y as f64) * extent as f64;
+        let x_local = (x_frac - coords.x() as f64) * extent as f64;
+        let y_local = (y_frac - coords.y() as f64) * extent as f64;
         (x_local, y_local).into()
     })
 }
@@ -44,13 +45,13 @@ fn bbox_intersects_tile(geom: &Geometry<f64>, extent: u32) -> bool {
 }
 
 pub fn transform_tile(
-    coords: &TileCoordinates,
+    coords: &TileCoord,
     data: &[u8],
     filter_collection: Option<&CompiledFilterCollection>,
 ) -> Result<Vec<u8>> {
     // decode the entire tile from bytes
-    let mut tile =
-        Tile::decode(data).with_context(|| format!("Failed to decode MVT tile: {}", coords))?;
+    let mut tile = Tile::decode(data)
+        .with_context(|| format!("Failed to decode MVT tile: {}", format_tile_coord(&coords)))?;
 
     for layer in &mut tile.layers {
         // if the filter_geometry is provided, we need to reproject it to tile coordinates
