@@ -9,6 +9,7 @@ anyhow = "1.0"
 async-compression = { version = "0.4", features = ["gzip"] }
 bytes = "1.4"
 clap = { version = "4", features = ["derive"] }
+deadpool = "0.12.2"
 flume = { version = "0.11.1", features = ["async"] }
 futures = "0.3.31"
 geo = "0.30"
