@@ -19,10 +19,9 @@ indicatif = "0.17.11"
 num_cpus = "1.16.0"
 # pmtiles = { git = "https://github.com/KotobaMedia/pmtiles-rs.git", branch = "enumerate-entries", features = ["mmap-async-tokio", "tilejson"] }
 # pmtiles = { path = "../pmtiles-rs", features = ["mmap-async-tokio", "tilejson"] }
-pmtiles = { git = "https://github.com/stadiamaps/pmtiles-rs.git", branch = "main", features = ["mmap-async-tokio", "tilejson", "iter-async"] }
+pmtiles = { version = "0.15", features = ["mmap-async-tokio", "tilejson", "iter-async"] }
 prost = "0.11"
 regex = "1"
-rusqlite = "0.35"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1", features = ["full"] }

@@ -6,9 +6,9 @@ use std::process::Command;
 
 use mvt_wrangler::{Args, run};
 
-/// Helper function to export MBTiles to GeoJSON using ogr2ogr
-async fn export_mbtiles_to_geojson(
-    mbtiles_path: &str,
+/// Helper function to export PMTiles to GeoJSON using ogr2ogr
+async fn export_pmtiles_to_geojson(
+    pmtiles_path: &str,
     output_geojson_path: &str,
     layer_name: &str,
     zoom_level: u8,
@@ -19,7 +19,7 @@ async fn export_mbtiles_to_geojson(
         .arg("-oo")
         .arg(format!("ZOOM_LEVEL={}", zoom_level))
         .arg(output_geojson_path)
-        .arg(mbtiles_path)
+        .arg(pmtiles_path)
         .arg(layer_name)
         .output()?;
 
@@ -68,8 +68,8 @@ async fn test_mvt_filtering_integration() {
     // Add input PMTiles file path
     let input_pmtiles_path = "tests/fixtures/input.pmtiles";
 
-    // Output MBTiles file path
-    let output_path = "tests/fixtures/output.mbtiles";
+    // Output PMTiles file path
+    let output_path = "tests/fixtures/output.pmtiles";
 
     // Verify test fixtures exist (will be added later)
     assert!(
@@ -102,8 +102,8 @@ async fn test_mvt_filtering_integration() {
     // Now, let's verify the output file has performed the expected filtering
     let exported_geojson_path = "tests/fixtures/output_z10.geojson";
 
-    // Export the MBTiles to GeoJSON for verification
-    let export_result = export_mbtiles_to_geojson(
+    // Export the PMTiles to GeoJSON for verification
+    let export_result = export_pmtiles_to_geojson(
         output_path,
         exported_geojson_path,
         "earth", // layer name

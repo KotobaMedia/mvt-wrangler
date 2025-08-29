@@ -1,12 +1,10 @@
 use anyhow::Result;
 use clap::Parser;
 use pmtiles::AsyncPmTilesReader;
-use rusqlite::Connection;
-use std::path::PathBuf;
+use std::{fs::File, path::PathBuf};
 use tokio::fs;
 
 mod filtering;
-mod metadata;
 mod processing;
 mod transform;
 
@@ -16,7 +14,7 @@ pub struct Args {
     /// Input PMTiles file
     pub input: PathBuf,
 
-    /// Output MBTiles file (will be overwritten if exists)
+    /// Output PMTiles file (will be overwritten if exists)
     pub output: PathBuf,
 
     /// Optional? GeoJSON file to filter features. Honestly, why are you using this tool if you don't want to filter?
@@ -48,42 +46,26 @@ pub async fn run(args: Args) -> Result<()> {
         fc = Some(compiled);
     }
 
+    // Ensure output has pmtiles extension
+    if args.output.extension().and_then(|s| s.to_str()) != Some("pmtiles") {
+        panic!("Output file must have .pmtiles extension");
+    }
+
     // Open input and new output DBs
     let in_pmt = AsyncPmTilesReader::new_with_path(&pmtiles_path).await?;
-    let mut out_conn = Connection::open(&args.output)?;
-
-    // Create the minimal MBTiles schema
-    out_conn.execute_batch(
-        r#"
-        PRAGMA synchronous = OFF;        -- no fsync at COMMIT
-        PRAGMA journal_mode = OFF;       -- no rollback journal
-        PRAGMA locking_mode = EXCLUSIVE;
-        PRAGMA temp_store = MEMORY;
-        PRAGMA cache_size = -200000;      -- ~200 MB cache (negative = KB)
-        PRAGMA mmap_size = 268435456;     -- 256 MB mmap window
-
-        CREATE TABLE metadata (name TEXT, value TEXT);
-        CREATE TABLE tiles (
-          zoom_level INTEGER,
-          tile_column INTEGER,
-          tile_row INTEGER,
-          tile_data BLOB
-        );
-        CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row);
-    "#,
-    )?;
-
+    let out_pmt_f = File::create(&args.output)?;
     let metadata = in_pmt.get_metadata().await?;
+    let out_pmt = pmtiles::PmTilesWriter::new(pmtiles::TileType::Mvt)
+        .metadata(&metadata)
+        .create(out_pmt_f)?;
+
     let header = in_pmt.get_header();
     if header.tile_type != pmtiles::TileType::Mvt {
         panic!("Unsupported tile type: {:?}", header.tile_type);
     }
     let tile_compression = header.tile_compression;
 
-    // Insert metadata
-    metadata::insert_metadata(&mut out_conn, &metadata, header)?;
-
-    processing::process_tiles(&pmtiles_path, out_conn, tile_compression, fc).await?;
+    processing::process_tiles(&pmtiles_path, out_pmt, tile_compression, fc).await?;
 
     println!("✅ Wrote transformed tiles to {}", args.output.display());
     Ok(())

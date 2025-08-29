@@ -3,7 +3,6 @@ use async_compression::tokio::write::GzipEncoder;
 use futures::TryStreamExt as _;
 use indicatif::{ProgressBar, ProgressStyle};
 use pmtiles::{AsyncPmTilesReader, MmapBackend, TileCoord};
-use rusqlite::params;
 use std::{path::Path, sync::Arc};
 use tokio::{
     io::{AsyncWriteExt, BufWriter},
@@ -18,7 +17,7 @@ pub fn format_tile_coord(coord: &TileCoord) -> String {
 
 pub async fn process_tiles(
     pmtiles_path: &Path,
-    mut out_conn: rusqlite::Connection,
+    mut out_pmt: pmtiles::PmTilesStreamWriter<std::fs::File>,
     tile_compression: pmtiles::Compression,
     filter_collection: Option<CompiledFilterCollection>,
 ) -> Result<()> {
@@ -79,26 +78,15 @@ pub async fn process_tiles(
     {
         let bar = bar.clone();
         handles.spawn_blocking(move || {
-            let txn = out_conn.transaction().unwrap();
-            {
-                let mut ins = txn
-                    .prepare(
-                        "
-                        INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data)
-                        VALUES (?1, ?2, ?3, ?4)
-                        ",
-                    )
-                    .unwrap();
-
-                while let Some((coords, new_data)) = ins_rx.blocking_recv() {
-                    // Convert Y coordinate from XYZ to TMS format
-                    let tms_y = (1u32 << coords.z()) - 1 - coords.y();
-                    ins.execute(params![coords.z(), coords.x(), tms_y, new_data])
-                        .unwrap();
-                    bar.inc(1);
-                }
+            while let Some((coords, new_data)) = ins_rx.blocking_recv() {
+                out_pmt
+                    .add_tile(coords, &new_data)
+                    .expect("Failed to add tile");
+                bar.inc(1);
             }
-            txn.commit().unwrap();
+            out_pmt
+                .finalize()
+                .expect("Failed to finalize output PMTiles");
         });
     }
 
