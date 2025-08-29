@@ -113,7 +113,7 @@ async fn test_mvt_filtering_integration() {
 
     assert!(
         export_result.is_ok(),
-        "Failed to export MBTiles to GeoJSON: {:?}",
+        "Failed to export PMTiles to GeoJSON: {:?}",
         export_result
     );
 

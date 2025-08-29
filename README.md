@@ -6,7 +6,7 @@ For example, I'm a big fan of [Protomaps' tiles generated from OpenStreetMap](ht
 
 ## Overview
 
-MVT Wrangler reads PMTiles files (containing MVT data) and outputs filtered MBTiles databases. It provides a powerful filtering system that allows you to:
+MVT Wrangler reads PMTiles files (containing MVT data) and outputs filtered PMTiles databases. It provides a powerful filtering system that allows you to:
 
 - Remove entire features based on attributes or geometry types
 - Strip specific tags/properties from features
@@ -41,13 +41,13 @@ The compiled binary will be available at `target/release/mvt-wrangler`.
 ### Basic Syntax
 
 ```bash
-mvt-wrangler <input.pmtiles> <output.mbtiles> [--filter <filter.geojson>]
+mvt-wrangler <input.pmtiles> <output.pmtiles> [--filter <filter.geojson>]
 ```
 
 ### Arguments
 
 - `input`: Path to the input PMTiles file
-- `output`: Path for the output MBTiles file (will be overwritten if it exists)
+- `output`: Path for the output PMTiles file (will be overwritten if it exists)
 - `--filter` / `-f`: Optional path to a GeoJSON filter file
 
 ### Examples
@@ -55,13 +55,13 @@ mvt-wrangler <input.pmtiles> <output.mbtiles> [--filter <filter.geojson>]
 #### Simple Conversion (No Filtering)
 
 ```bash
-mvt-wrangler input.pmtiles output.mbtiles
+mvt-wrangler input.pmtiles output.pmtiles
 ```
 
 #### With Filtering
 
 ```bash
-mvt-wrangler input.pmtiles output.mbtiles --filter my-filter.geojson
+mvt-wrangler input.pmtiles output.pmtiles --filter my-filter.geojson
 ```
 
 ## Dynamic Filtering
@@ -105,7 +105,7 @@ Create a filter file `remove-parks.geojson`:
 Then apply it:
 
 ```bash
-mvt-wrangler input.pmtiles clean-output.mbtiles --filter remove-parks.geojson
+mvt-wrangler input.pmtiles clean-output.pmtiles --filter remove-parks.geojson
 ```
 
 ### Filter Capabilities
@@ -158,7 +158,7 @@ The tool is optimized for processing large tile sets:
 
 ## Output Format
 
-The output MBTiles file follows the [MBTiles specification](https://github.com/mapbox/mbtiles-spec).
+The output PMTiles file follows the [PMTiles specification](https://github.com/mapbox/pmtiles-spec).
 
 This tool uses the [pmtiles-rs](https://github.com/stadiamaps/pmtiles-rs) library. When pmtiles-rs gains support for pmtiles writing, this tool will also switch to pmtiles output.
 
@@ -168,21 +168,21 @@ This tool uses the [pmtiles-rs](https://github.com/stadiamaps/pmtiles-rs) librar
 Remove unwanted features or properties from vector tiles:
 ```bash
 # Remove all POI features globally
-mvt-wrangler source.pmtiles clean.mbtiles --filter remove-pois.geojson
+mvt-wrangler source.pmtiles clean.pmtiles --filter remove-pois.geojson
 ```
 
 ### Privacy Compliance
 Strip personally identifiable information:
 ```bash
 # Remove all name tags starting with personal prefixes
-mvt-wrangler source.pmtiles anonymized.mbtiles --filter remove-personal-names.geojson
+mvt-wrangler source.pmtiles anonymized.pmtiles --filter remove-personal-names.geojson
 ```
 
 ### Data Optimization
 Reduce tile size by removing unnecessary attributes:
 ```bash
 # Keep only essential properties for rendering
-mvt-wrangler full.pmtiles minimal.mbtiles --filter essential-only.geojson
+mvt-wrangler full.pmtiles minimal.pmtiles --filter essential-only.geojson
 ```
 
 ## Requirements
