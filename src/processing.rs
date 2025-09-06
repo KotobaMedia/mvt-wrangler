@@ -60,10 +60,11 @@ pub async fn process_tiles(
     let entries = in_pmt.clone().entries().try_collect::<Vec<_>>().await?;
     drop(in_pmt); // release the reader back to the pool
 
-    let coords = entries
+    let mut coords = entries
         .iter()
         .flat_map(|e| e.iter_coords())
         .collect::<Vec<_>>();
+    coords.sort_unstable();
     let coords_count = coords.len();
 
     println!("Found {} tiles in the input archive", coords_count);
@@ -102,6 +103,7 @@ pub async fn process_tiles(
         });
     }
     drop(coords_rx);
+    drop(in_tx); // Close the original sender so in_rx can see EOF
 
     // blocking processing
     let (out_tx, out_rx) = flume::bounded::<(usize, TileId, Vec<u8>)>(QUEUE_CAPACITY);
@@ -120,7 +122,7 @@ pub async fn process_tiles(
                 Ok::<_, anyhow::Error>(())
             },
         )?;
-
+        // The out_tx is automatically dropped when try_for_each_with completes
         Ok::<_, anyhow::Error>(())
     });
     tasks.spawn_blocking(move || {
@@ -141,6 +143,9 @@ pub async fn process_tiles(
                 next += 1;
             }
         }
+        bar.finish_and_clear();
+        println!("Finished writing tiles, finalizing archive...");
+        out_pmt.finalize()?;
 
         Ok::<_, anyhow::Error>(())
     });
@@ -148,6 +153,7 @@ pub async fn process_tiles(
     while let Some(res) = tasks.join_next().await {
         res??;
     }
+    println!("All done.");
 
     Ok(())
 }
