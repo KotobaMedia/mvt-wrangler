@@ -60,7 +60,7 @@ pub async fn run(args: Args) -> Result<()> {
         panic!("Unsupported tile type: {:?}", header.tile_type);
     }
     let out_pmt = pmtiles::PmTilesWriter::new(header.tile_type)
-        .tile_compression(pmtiles::Compression::None) // header.tile_compression)
+        .tile_compression(header.tile_compression)
         .min_zoom(header.min_zoom)
         .max_zoom(header.max_zoom)
         .bounds(

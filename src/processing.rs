@@ -138,7 +138,7 @@ pub async fn process_tiles(
 
             while let Some(v) = buf.remove(&next) {
                 let (coord, new_data) = v;
-                out_pmt.add_tile(coord.into(), &new_data)?;
+                out_pmt.add_raw_tile(coord.into(), &new_data)?;
                 bar.inc(1);
                 next += 1;
             }
