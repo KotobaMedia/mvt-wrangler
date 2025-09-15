@@ -1,15 +1,10 @@
-use anyhow::Result;
-use deadpool::managed::{Manager, Pool};
+use anyhow::{Context, Result};
 use flate2::{Compression, write::GzEncoder};
 use futures::TryStreamExt as _;
 use indicatif::{ProgressBar, ProgressStyle};
-use pmtiles::{AsyncPmTilesReader, MmapBackend, TileCoord, TileId};
+use pmtiles::{AsyncPmTilesReader, TileCoord, TileId};
 use rayon::prelude::*;
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{collections::BTreeMap, path::Path, sync::Arc};
 use tokio::task::JoinSet;
 
 use crate::{filtering::data::CompiledFilterCollection, transform::transform_tile};
@@ -20,25 +15,6 @@ pub fn format_tile_coord(coords: &TileCoord) -> String {
     format!("{}/{}/{}", coords.z(), coords.x(), coords.y())
 }
 
-struct PmTilesReaderManager {
-    path: PathBuf,
-}
-impl Manager for PmTilesReaderManager {
-    type Type = Arc<AsyncPmTilesReader<MmapBackend>>;
-    type Error = anyhow::Error;
-    async fn create(&self) -> Result<Self::Type, Self::Error> {
-        let reader = AsyncPmTilesReader::new_with_path(&self.path).await?;
-        Ok(Arc::new(reader))
-    }
-    async fn recycle(
-        &self,
-        _obj: &mut Self::Type,
-        _metrics: &deadpool::managed::Metrics,
-    ) -> deadpool::managed::RecycleResult<Self::Error> {
-        Ok(())
-    }
-}
-
 pub async fn process_tiles(
     pmtiles_path: &Path,
     mut out_pmt: pmtiles::PmTilesStreamWriter<std::fs::File>,
@@ -46,19 +22,14 @@ pub async fn process_tiles(
     filter_collection: Option<CompiledFilterCollection>,
 ) -> Result<()> {
     let concurrency_limit = num_cpus::get();
-    let in_pmt_manager = PmTilesReaderManager {
-        path: pmtiles_path.to_path_buf(),
-    };
-    let in_pmt_pool: Pool<PmTilesReaderManager> = Pool::builder(in_pmt_manager)
-        .max_size(concurrency_limit)
-        .build()?;
 
-    let in_pmt = in_pmt_pool
-        .get()
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to get input PMTiles reader: {e}"))?;
+    let in_pmt = Arc::new(
+        AsyncPmTilesReader::new_with_path(pmtiles_path)
+            .await
+            .with_context(|| "failed to open input PMTiles")?,
+    );
+
     let entries = in_pmt.clone().entries().try_collect::<Vec<_>>().await?;
-    drop(in_pmt); // release the reader back to the pool
 
     let mut coords = entries
         .iter()
@@ -72,8 +43,8 @@ pub async fn process_tiles(
     let (in_tx, in_rx) = flume::bounded::<(usize, TileId, Vec<u8>)>(QUEUE_CAPACITY);
 
     let mut tasks = JoinSet::new();
+
     // the async side of processing
-    let stream_in_pmt_pool = in_pmt_pool.clone();
     let (coords_tx, coords_rx) = flume::unbounded::<(usize, TileId)>();
     tasks.spawn(async move {
         for (i, coord) in coords.into_iter().enumerate() {
@@ -83,15 +54,11 @@ pub async fn process_tiles(
         Ok::<_, anyhow::Error>(())
     });
     for _ in 0..concurrency_limit {
-        let in_pmt_pool = stream_in_pmt_pool.clone();
+        let in_pmt = in_pmt.clone();
         let tx = in_tx.clone();
         let coords_rx = coords_rx.clone();
         tasks.spawn(async move {
             while let Ok((i, coord)) = coords_rx.recv() {
-                let in_pmt = in_pmt_pool
-                    .get()
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Error getting tile decompressor: {}", e))?;
                 // Because we're enumerating tile coordinates, get_tile_decompress
                 // should never return a None, unless something is really wrong.
                 let data = in_pmt.get_tile_decompressed(coord).await?.unwrap();
