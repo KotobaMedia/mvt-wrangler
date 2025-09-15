@@ -41,7 +41,7 @@ The compiled binary will be available at `target/release/mvt-wrangler`.
 ### Basic Syntax
 
 ```bash
-mvt-wrangler <input.pmtiles> <output.pmtiles> [--filter <filter.geojson>]
+mvt-wrangler <input.pmtiles> <output.pmtiles> [--filter <filter.geojson>] [--name <string>] [--description <string>] [--attribution <string>]
 ```
 
 ### Arguments
@@ -49,6 +49,9 @@ mvt-wrangler <input.pmtiles> <output.pmtiles> [--filter <filter.geojson>]
 - `input`: Path to the input PMTiles file
 - `output`: Path for the output PMTiles file (will be overwritten if it exists)
 - `--filter` / `-f`: Optional path to a GeoJSON filter file
+- `--name` / `-n`: Set TileJSON `name`
+- `--description` / `-N`: Set TileJSON `description`
+- `--attribution` / `-A`: Set TileJSON `attribution`
 
 ### Examples
 
@@ -62,6 +65,16 @@ mvt-wrangler input.pmtiles output.pmtiles
 
 ```bash
 mvt-wrangler input.pmtiles output.pmtiles --filter my-filter.geojson
+```
+
+#### Override Metadata
+
+```bash
+# Set display name, description and attribution
+mvt-wrangler input.pmtiles output.pmtiles \
+  --name "My Tiles" \
+  --description "Filtered tileset" \
+  --attribution "© Me"
 ```
 
 ## Dynamic Filtering
