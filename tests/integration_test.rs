@@ -89,6 +89,9 @@ async fn test_mvt_filtering_integration() {
         input: PathBuf::from(input_pmtiles_path),
         output: PathBuf::from(output_path),
         filter: Some(PathBuf::from(filter_geojson_path)),
+        name: None,
+        description: None,
+        attribution: None,
     };
     let result = run(args).await;
     assert!(result.is_ok(), "Integration test failed: {:?}", result);

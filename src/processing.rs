@@ -1,18 +1,18 @@
-use anyhow::Result;
-use async_compression::tokio::write::GzipEncoder;
+use anyhow::{Context, Result};
+use flate2::{Compression, write::GzEncoder};
 use futures::TryStreamExt as _;
 use indicatif::{ProgressBar, ProgressStyle};
-use pmtiles::{AsyncPmTilesReader, MmapBackend, TileCoord};
-use std::{path::Path, sync::Arc};
-use tokio::{
-    io::{AsyncWriteExt, BufWriter},
-    task::JoinSet,
-};
+use pmtiles::{AsyncPmTilesReader, TileCoord, TileId};
+use rayon::prelude::*;
+use std::{collections::BTreeMap, path::Path, sync::Arc};
+use tokio::task::JoinSet;
 
 use crate::{filtering::data::CompiledFilterCollection, transform::transform_tile};
 
-pub fn format_tile_coord(coord: &TileCoord) -> String {
-    format!("{}/{}/{}", coord.z(), coord.x(), coord.y())
+const QUEUE_CAPACITY: usize = 2_usize.pow(16);
+
+pub fn format_tile_coord(coords: &TileCoord) -> String {
+    format!("{}/{}/{}", coords.z(), coords.x(), coords.y())
 }
 
 pub async fn process_tiles(
@@ -21,136 +21,132 @@ pub async fn process_tiles(
     tile_compression: pmtiles::Compression,
     filter_collection: Option<CompiledFilterCollection>,
 ) -> Result<()> {
-    let in_pmt = Arc::new(AsyncPmTilesReader::new_with_path(pmtiles_path).await?);
-    let entries = in_pmt.entries().try_collect::<Vec<_>>().await?;
-    let tile_count = entries
+    let concurrency_limit = num_cpus::get();
+
+    let in_pmt = Arc::new(
+        AsyncPmTilesReader::new_with_path(pmtiles_path)
+            .await
+            .with_context(|| "failed to open input PMTiles")?,
+    );
+
+    let entries = in_pmt.clone().entries().try_collect::<Vec<_>>().await?;
+
+    let mut coords = entries
         .iter()
-        .map(|e| e.iter_coords().count())
-        .sum::<usize>();
-    let bar = ProgressBar::new(tile_count as u64);
-    bar.set_style(ProgressStyle::with_template(
-        "[{msg}] {wide_bar} {pos:>7}/{len:7} {elapsed}/{duration}",
-    )?);
+        .flat_map(|e| e.iter_coords())
+        .collect::<Vec<_>>();
+    coords.sort_unstable();
+    let coords_count = coords.len();
 
-    let mut handles = JoinSet::new();
+    println!("Found {} tiles in the input archive", coords_count);
 
-    let (entry_tx, entry_rx) = flume::unbounded();
-    {
-        handles.spawn(async move {
-            for entry in entries {
-                entry_tx.send_async(entry).await.unwrap();
-            }
-        });
-    }
+    let (in_tx, in_rx) = flume::bounded::<(usize, TileId, Vec<u8>)>(QUEUE_CAPACITY);
 
-    let (ins_tx, mut ins_rx) = tokio::sync::mpsc::unbounded_channel();
-    {
-        for _ in 0..num_cpus::get() {
-            let entry_rx = entry_rx.clone();
-            let bar = bar.clone();
-            let ins_tx = ins_tx.clone();
-            let pmtiles_path = pmtiles_path.to_path_buf();
-            let filter_collection = filter_collection.clone();
-            handles.spawn(async move {
-                let in_pmt = AsyncPmTilesReader::new_with_path(pmtiles_path)
-                    .await
-                    .unwrap();
-                while let Ok(entry) = entry_rx.recv_async().await {
-                    if let Err(e) = process_single_tile(
-                        entry,
-                        &in_pmt,
-                        &bar,
-                        tile_compression,
-                        &ins_tx,
-                        filter_collection.as_ref(),
-                    )
-                    .await
-                    {
-                        eprintln!("Error processing tile: {}", e);
-                    }
-                }
-            });
+    let mut tasks = JoinSet::new();
+
+    // the async side of processing
+    let (coords_tx, coords_rx) = flume::unbounded::<(usize, TileId)>();
+    tasks.spawn(async move {
+        for (i, coord) in coords.into_iter().enumerate() {
+            coords_tx.send((i, coord)).unwrap();
         }
-    }
-    drop(entry_rx);
-    drop(ins_tx);
+        drop(coords_tx); // Close the sender when done
+        Ok::<_, anyhow::Error>(())
+    });
+    for _ in 0..concurrency_limit {
+        let in_pmt = in_pmt.clone();
+        let tx = in_tx.clone();
+        let coords_rx = coords_rx.clone();
+        tasks.spawn(async move {
+            while let Ok((i, coord)) = coords_rx.recv() {
+                // Because we're enumerating tile coordinates, get_tile_decompress
+                // should never return a None, unless something is really wrong.
+                let data = in_pmt.get_tile_decompressed(coord).await?.unwrap();
+                let item = (i, coord, data.to_vec());
 
-    {
-        let bar = bar.clone();
-        handles.spawn_blocking(move || {
-            while let Some((coords, new_data)) = ins_rx.blocking_recv() {
-                out_pmt
-                    .add_tile(coords, &new_data)
-                    .expect("Failed to add tile");
-                bar.inc(1);
+                tx.send_async(item).await?;
             }
-            out_pmt
-                .finalize()
-                .expect("Failed to finalize output PMTiles");
+            Ok::<_, anyhow::Error>(())
         });
     }
+    drop(coords_rx);
+    drop(in_tx); // Close the original sender so in_rx can see EOF
 
-    // Wait for all tasks to finish
-    handles.join_all().await;
+    // blocking processing
+    let (out_tx, out_rx) = flume::bounded::<(usize, TileId, Vec<u8>)>(QUEUE_CAPACITY);
 
-    bar.finish_and_clear();
+    tasks.spawn_blocking(move || {
+        in_rx.into_iter().par_bridge().try_for_each_with(
+            out_tx,
+            |out_tx, (i, coord, input_data)| {
+                let output_data = transform_tile_with_compression(
+                    &coord.into(),
+                    &input_data,
+                    tile_compression,
+                    filter_collection.as_ref(),
+                )?;
+                out_tx.send((i, coord, output_data))?;
+                Ok::<_, anyhow::Error>(())
+            },
+        )?;
+        // The out_tx is automatically dropped when try_for_each_with completes
+        Ok::<_, anyhow::Error>(())
+    });
+    tasks.spawn_blocking(move || {
+        let bar = ProgressBar::new(coords_count as u64);
+        bar.set_style(ProgressStyle::with_template(
+            "[{msg}] {wide_bar} {pos:>7}/{len:7} {elapsed}/{duration} {per_sec:7}",
+        )?);
+        let mut next = 0usize;
+        let mut buf = BTreeMap::new();
+        while let Ok((i, coord, res)) = out_rx.recv() {
+            bar.set_message(format_tile_coord(&coord.into()));
+            buf.insert(i, (coord, res));
+
+            while let Some(v) = buf.remove(&next) {
+                let (coord, new_data) = v;
+                out_pmt.add_raw_tile(coord.into(), &new_data)?;
+                bar.inc(1);
+                next += 1;
+            }
+        }
+        bar.finish_and_clear();
+        println!("Finished writing tiles, finalizing archive...");
+        out_pmt.finalize()?;
+
+        Ok::<_, anyhow::Error>(())
+    });
+
+    while let Some(res) = tasks.join_next().await {
+        res??;
+    }
+    println!("All done.");
 
     Ok(())
 }
 
-async fn process_single_tile(
-    entry: pmtiles::DirEntry,
-    in_pmt: &AsyncPmTilesReader<MmapBackend>,
-    bar: &ProgressBar,
+fn transform_tile_with_compression(
+    coords: &TileCoord,
+    data: &[u8],
     tile_compression: pmtiles::Compression,
-    ins_tx: &tokio::sync::mpsc::UnboundedSender<(TileCoord, Vec<u8>)>,
     filter_collection: Option<&CompiledFilterCollection>,
-) -> Result<()> {
-    let tiles = entry
-        .iter_coords()
-        .map(|tile_id| tile_id.into())
-        .collect::<Vec<TileCoord>>();
-
-    let coords = tiles
-        .get(0)
-        .ok_or_else(|| anyhow::anyhow!("No tile coordinates found in entry: {:?}", entry))?;
-    bar.set_message(format_tile_coord(&coords));
-
-    let data = in_pmt.get_tile_decompressed(*coords).await?;
-    let Some(data) = data else { return Ok(()) }; // skip empty tiles
-    let new_data = transform_tile_async(&coords, &data, filter_collection).await?;
-
+) -> Result<Vec<u8>> {
+    let bytes = transform_tile(coords, data, filter_collection)?;
     let new_data = match tile_compression {
         pmtiles::Compression::Gzip => {
             let mut compressed = Vec::new();
-            let mut encoder = GzipEncoder::new(BufWriter::new(&mut compressed));
-            encoder.write_all(&new_data).await?;
-            encoder.shutdown().await?;
+            {
+                let mut encoder = GzEncoder::new(&mut compressed, Compression::default());
+                std::io::Write::write_all(&mut encoder, &bytes)?;
+                encoder.finish()?;
+            }
             compressed
         }
-        pmtiles::Compression::None => new_data,
+        pmtiles::Compression::None => bytes,
         _ => {
             panic!("Unsupported tile compression: {:?}", tile_compression);
         }
     };
 
-    for tile_coords in tiles {
-        ins_tx.send((tile_coords, new_data.clone())).unwrap();
-    }
-
-    Ok(())
-}
-
-async fn transform_tile_async(
-    coords: &TileCoord,
-    data: &[u8],
-    filter_collection: Option<&CompiledFilterCollection>,
-) -> Result<Vec<u8>> {
-    let coords_c = coords.clone();
-    let data_c = data.to_vec();
-    let filter_collection_c = filter_collection.cloned();
-    tokio::task::spawn_blocking(move || {
-        transform_tile(&coords_c, &data_c, filter_collection_c.as_ref())
-    })
-    .await?
+    Ok(new_data)
 }

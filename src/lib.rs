@@ -7,6 +7,7 @@ use tokio::fs;
 mod filtering;
 mod processing;
 mod transform;
+mod metadata;
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -21,6 +22,18 @@ pub struct Args {
     /// See FILTERING.md for details on the syntax.
     #[arg(short, long)]
     pub filter: Option<PathBuf>,
+
+    /// Name of the tileset (for PMTiles metadata)
+    #[arg(long, short = 'n')]
+    pub name: Option<String>,
+
+    /// Description of the tileset (for PMTiles metadata)
+    #[arg(long, short = 'N')]
+    pub description: Option<String>,
+
+    /// Attribution information for the tileset (for PMTiles metadata)
+    #[arg(long, short = 'A')]
+    pub attribution: Option<String>,
 }
 
 pub async fn run(args: Args) -> Result<()> {
@@ -55,10 +68,17 @@ pub async fn run(args: Args) -> Result<()> {
     let in_pmt = AsyncPmTilesReader::new_with_path(&pmtiles_path).await?;
     let out_pmt_f = File::create(&args.output)?;
     let header = in_pmt.get_header();
-    let metadata = in_pmt.get_metadata().await?;
+    let in_metadata_str = in_pmt.get_metadata().await?;
     if header.tile_type != pmtiles::TileType::Mvt {
         panic!("Unsupported tile type: {:?}", header.tile_type);
     }
+    // Build output metadata by merging input metadata with overrides
+    let out_metadata_str = metadata::apply_overrides(
+        &in_metadata_str,
+        args.name.as_deref(),
+        args.description.as_deref(),
+        args.attribution.as_deref(),
+    )?;
     let out_pmt = pmtiles::PmTilesWriter::new(header.tile_type)
         .tile_compression(header.tile_compression)
         .min_zoom(header.min_zoom)
@@ -71,7 +91,7 @@ pub async fn run(args: Args) -> Result<()> {
         )
         .center_zoom(header.center_zoom)
         .center(header.center_longitude, header.center_latitude)
-        .metadata(&metadata)
+        .metadata(&out_metadata_str)
         .create(out_pmt_f)?;
 
     processing::process_tiles(&pmtiles_path, out_pmt, header.tile_compression, fc).await?;
