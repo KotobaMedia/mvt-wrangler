@@ -194,17 +194,17 @@ impl CompiledFilterFeature {
         context: &super::executor::EvaluationContext,
     ) -> Result<bool> {
         // Check if there's a layer filter for this specific layer
-        if let Some(layer_filter) = self.layers.get(&context.layer_name) {
-            if let Some(ref feature_expr) = layer_filter.feature {
-                return super::executor::ExpressionExecutor::evaluate_bool(feature_expr, context);
-            }
+        if let Some(layer_filter) = self.layers.get(&context.layer_name)
+            && let Some(ref feature_expr) = layer_filter.feature
+        {
+            return super::executor::ExpressionExecutor::evaluate_bool(feature_expr, context);
         }
 
         // Check if there's a wildcard layer filter
-        if let Some(layer_filter) = self.layers.get("*") {
-            if let Some(ref feature_expr) = layer_filter.feature {
-                return super::executor::ExpressionExecutor::evaluate_bool(feature_expr, context);
-            }
+        if let Some(layer_filter) = self.layers.get("*")
+            && let Some(ref feature_expr) = layer_filter.feature
+        {
+            return super::executor::ExpressionExecutor::evaluate_bool(feature_expr, context);
         }
 
         // No matching filter found, don't remove the feature
@@ -215,17 +215,17 @@ impl CompiledFilterFeature {
     /// Returns true if the tag should be removed (filtered out)
     pub fn should_remove_tag(&self, context: &super::executor::EvaluationContext) -> Result<bool> {
         // Check if there's a layer filter for this specific layer
-        if let Some(layer_filter) = self.layers.get(&context.layer_name) {
-            if let Some(ref tag_expr) = layer_filter.tag {
-                return super::executor::ExpressionExecutor::evaluate_bool(tag_expr, context);
-            }
+        if let Some(layer_filter) = self.layers.get(&context.layer_name)
+            && let Some(ref tag_expr) = layer_filter.tag
+        {
+            return super::executor::ExpressionExecutor::evaluate_bool(tag_expr, context);
         }
 
         // Check if there's a wildcard layer filter
-        if let Some(layer_filter) = self.layers.get("*") {
-            if let Some(ref tag_expr) = layer_filter.tag {
-                return super::executor::ExpressionExecutor::evaluate_bool(tag_expr, context);
-            }
+        if let Some(layer_filter) = self.layers.get("*")
+            && let Some(ref tag_expr) = layer_filter.tag
+        {
+            return super::executor::ExpressionExecutor::evaluate_bool(tag_expr, context);
         }
 
         // No matching filter found, don't remove the tag

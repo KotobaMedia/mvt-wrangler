@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde_json::Value;
 
 /// Apply simple metadata overrides to a PMTiles metadata JSON string.
@@ -11,9 +11,8 @@ pub fn apply_overrides(
     attribution: Option<&str>,
 ) -> Result<String> {
     // Parse base JSON; fall back to empty object if invalid or non-object
-    let mut meta_value: Value = serde_json::from_str(base_json).unwrap_or_else(|_| {
-        Value::Object(serde_json::Map::new())
-    });
+    let mut meta_value: Value =
+        serde_json::from_str(base_json).unwrap_or_else(|_| Value::Object(serde_json::Map::new()));
     if !meta_value.is_object() {
         meta_value = Value::Object(serde_json::Map::new());
     }
@@ -34,4 +33,3 @@ pub fn apply_overrides(
 
     Ok(serde_json::to_string(&meta_value)?)
 }
-

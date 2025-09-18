@@ -5,9 +5,9 @@ use std::{fs::File, path::PathBuf};
 use tokio::fs;
 
 mod filtering;
+mod metadata;
 mod processing;
 mod transform;
-mod metadata;
 
 #[derive(Parser)]
 #[command(author, version, about)]

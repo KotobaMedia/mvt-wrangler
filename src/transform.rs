@@ -51,7 +51,7 @@ pub fn transform_tile(
 ) -> Result<Vec<u8>> {
     // decode the entire tile from bytes
     let mut tile = Tile::decode(data)
-        .with_context(|| format!("Failed to decode MVT tile: {}", format_tile_coord(&coords)))?;
+        .with_context(|| format!("Failed to decode MVT tile: {}", format_tile_coord(coords)))?;
 
     for layer in &mut tile.layers {
         // if the filter_geometry is provided, we need to reproject it to tile coordinates
