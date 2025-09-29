@@ -109,7 +109,7 @@
       },
       "id": 1
     },
-        {
+    {
       "type": "Feature",
       "properties": {
         "name": "Global",
@@ -147,6 +147,5 @@
         ]
       }
     }
-
   ]
 }
