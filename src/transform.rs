@@ -3,7 +3,7 @@ use crate::filtering::data::CompiledFilterCollection;
 use crate::processing::format_tile_coord;
 use anyhow::{Context, Result};
 use geo::{BoundingRect, Coord, Intersects, MapCoords};
-use geo_types::Geometry;
+use geo_types::{Geometry, LineString, Polygon};
 use geozero::ToGeo;
 use geozero::mvt::{
     Tile,
@@ -44,6 +44,32 @@ fn bbox_intersects_tile(geom: &Geometry<f64>, extent: u32) -> bool {
         .unwrap_or(false)
 }
 
+fn tile_y_to_lat(y: f64, n: f64) -> f64 {
+    let radians = std::f64::consts::PI * (1.0 - 2.0 * y / n);
+    radians.sinh().atan().to_degrees()
+}
+
+fn tile_bounds(coords: &TileCoord) -> Geometry<f64> {
+    let n = 2_f64.powi(coords.z() as i32);
+    let x = coords.x() as f64;
+    let y = coords.y() as f64;
+
+    let west = x / n * 360.0 - 180.0;
+    let east = (x + 1.0) / n * 360.0 - 180.0;
+    let north = tile_y_to_lat(y, n);
+    let south = tile_y_to_lat(y + 1.0, n);
+
+    let ring = vec![
+        (west, north),
+        (east, north),
+        (east, south),
+        (west, south),
+        (west, north),
+    ];
+
+    Geometry::Polygon(Polygon::new(LineString::from(ring), vec![]))
+}
+
 pub fn transform_tile(
     coords: &TileCoord,
     data: &[u8],
@@ -53,6 +79,13 @@ pub fn transform_tile(
     let mut tile = Tile::decode(data)
         .with_context(|| format!("Failed to decode MVT tile: {}", format_tile_coord(coords)))?;
 
+    let filter_candidates = if let Some(fc) = filter_collection {
+        let bounds = tile_bounds(coords);
+        fc.get_filter_features(&bounds)
+    } else {
+        Vec::new()
+    };
+
     for layer in &mut tile.layers {
         // if the filter_geometry is provided, we need to reproject it to tile coordinates
         // let's do a quick check to see if the filter intersects the tile
@@ -60,23 +93,19 @@ pub fn transform_tile(
         // we do this per layer because the extent is set per layer.
         let extent = layer.extent.unwrap_or(4096);
 
-        let filter_features = filter_collection
-            .map(|fc| {
-                fc.features
-                    .iter()
-                    .filter_map(|f| {
-                        let mut feature = f.clone();
-                        let tile_geometry = project_to_tile(&feature.geometry, coords, extent);
-                        feature.geometry = tile_geometry;
-                        if bbox_intersects_tile(&feature.geometry, extent) {
-                            Some(feature)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>()
+        let filter_features = filter_candidates
+            .iter()
+            .filter_map(|f| {
+                let mut feature = (*f).clone();
+                let tile_geometry = project_to_tile(&feature.geometry, coords, extent);
+                feature.geometry = tile_geometry;
+                if bbox_intersects_tile(&feature.geometry, extent) {
+                    Some(feature)
+                } else {
+                    None
+                }
             })
-            .unwrap_or_default();
+            .collect::<Vec<_>>();
 
         let mut keys: Vec<String> = Vec::with_capacity(layer.keys.len());
         let mut values: Vec<Value> = Vec::with_capacity(layer.values.len());

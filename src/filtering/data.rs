@@ -1,9 +1,12 @@
 use super::expression_compiler::{CompiledExpression, ExpressionCompiler};
 use anyhow::{Result, anyhow};
-use geojson::Geometry;
+use geo::{BoundingRect, Intersects};
+use geo_types::{Geometry, Rect};
+use geojson::Geometry as GeoJsonGeometry;
+use rstar::{AABB, RTree, RTreeObject};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Represents a GeoJSON filtering specification
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,7 +21,7 @@ pub struct FilterCollection {
 pub struct FilterFeature {
     #[serde(rename = "type")]
     pub feature_type: String, // Should be "Feature"
-    pub geometry: Geometry,
+    pub geometry: GeoJsonGeometry,
     pub properties: FilterProperties,
 }
 
@@ -143,9 +146,7 @@ impl FilterCollection {
             compiled_features.push(feature.compile()?);
         }
 
-        Ok(CompiledFilterCollection {
-            features: compiled_features,
-        })
+        Ok(CompiledFilterCollection::new(compiled_features))
     }
 }
 
@@ -153,12 +154,86 @@ impl FilterCollection {
 #[derive(Debug, Clone)]
 pub struct CompiledFilterCollection {
     pub features: Vec<CompiledFilterFeature>,
+    feature_index: RTree<FeatureIndexEntry>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FeatureIndexEntry {
+    index: usize,
+    envelope: AABB<[f64; 2]>,
+}
+
+impl FeatureIndexEntry {
+    fn new(index: usize, rect: &Rect) -> Self {
+        Self {
+            index,
+            envelope: Self::envelope_from_rect(rect),
+        }
+    }
+
+    fn envelope_from_rect(rect: &Rect) -> AABB<[f64; 2]> {
+        let min = rect.min();
+        let max = rect.max();
+        AABB::from_corners([min.x, min.y], [max.x, max.y])
+    }
+}
+
+impl RTreeObject for FeatureIndexEntry {
+    type Envelope = AABB<[f64; 2]>;
+
+    fn envelope(&self) -> Self::Envelope {
+        self.envelope
+    }
+}
+
+impl CompiledFilterCollection {
+    fn new(features: Vec<CompiledFilterFeature>) -> Self {
+        let mut indexed_entries = Vec::new();
+
+        for (index, feature) in features.iter().enumerate() {
+            if let Some(rect) = feature.geometry.bounding_rect() {
+                indexed_entries.push(FeatureIndexEntry::new(index, &rect));
+            }
+        }
+
+        let feature_index = RTree::bulk_load(indexed_entries);
+
+        Self {
+            features,
+            feature_index,
+        }
+    }
+
+    pub fn get_filter_features(&self, geom: &Geometry<f64>) -> Vec<&CompiledFilterFeature> {
+        let mut results = Vec::new();
+        let mut seen = HashSet::new();
+
+        let Some(rect) = geom.bounding_rect() else {
+            return results; // No bounding rect, return empty
+        };
+
+        let envelope = FeatureIndexEntry::envelope_from_rect(&rect);
+        for entry in self
+            .feature_index
+            .locate_in_envelope_intersecting(&envelope)
+        {
+            let index = entry.index;
+            if seen.insert(index) {
+                let candidate = &self.features[index];
+                if candidate.geometry.intersects(geom) {
+                    results.push(candidate);
+                }
+            }
+        }
+
+        results
+    }
 }
 
 /// Compiled version of FilterFeature for efficient evaluation
 #[derive(Debug, Clone)]
 pub struct CompiledFilterFeature {
-    pub geometry: geo_types::Geometry<f64>,
+    pub geometry: Geometry<f64>,
     pub layers: HashMap<String, CompiledLayerFilter>,
 }
 
@@ -373,7 +448,7 @@ mod tests {
             feature_type: "FeatureCollection".to_string(),
             features: vec![FilterFeature {
                 feature_type: "Feature".to_string(),
-                geometry: Geometry::new(Value::Point(vec![0.0, 0.0])),
+                geometry: GeoJsonGeometry::new(Value::Point(vec![0.0, 0.0])),
                 properties: FilterProperties {
                     id: Some("test-filter".to_string()),
                     description: Some("Test filter".to_string()),
