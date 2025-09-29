@@ -28,6 +28,7 @@ jobs:
         with:
           toolchain: stable
           target: ${{ matrix.job.arch }}
+          components: rustfmt, clippy
 
       - name: Install dependencies
         if: matrix.job.os == 'ubuntu-latest'
