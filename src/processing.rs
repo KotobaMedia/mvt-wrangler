@@ -76,6 +76,8 @@ pub async fn process_tiles(
     let (out_tx, out_rx) = flume::bounded::<(usize, TileId, Vec<u8>)>(QUEUE_CAPACITY);
 
     tasks.spawn_blocking(move || {
+        // in_rx is the receving end of the tile processing channel
+        // out_tx is the sending end of the output channel
         in_rx.into_iter().par_bridge().try_for_each_with(
             out_tx,
             |out_tx, (i, coord, input_data)| {
@@ -92,6 +94,7 @@ pub async fn process_tiles(
         // The out_tx is automatically dropped when try_for_each_with completes
         Ok::<_, anyhow::Error>(())
     });
+
     tasks.spawn_blocking(move || {
         let bar = ProgressBar::new(coords_count as u64);
         bar.set_style(ProgressStyle::with_template(
