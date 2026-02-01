@@ -18,6 +18,8 @@ jobs:
         job:
           - os: ubuntu-latest
             arch: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            arch: aarch64-unknown-linux-gnu
           - os: macos-latest
             arch: aarch64-apple-darwin
           - os: windows-latest
@@ -53,7 +55,7 @@ jobs:
           spctl -a -vv "$BIN" || true
 
       - name: Create archive (Linux)
-        if: matrix.job.os == 'ubuntu-latest'
+        if: startsWith(matrix.job.os, 'ubuntu-')
         run: |
           mkdir -p target/artifacts
           cp target/${{ matrix.job.arch }}/release/${{ env.BINARY }} target/artifacts/
@@ -121,6 +123,12 @@ jobs:
           name: aarch64-apple-darwin-release
           path: artifacts/aarch64
 
+      - name: Download artifact for aarch64-unknown-linux-gnu
+        uses: actions/download-artifact@v5
+        with:
+          name: aarch64-unknown-linux-gnu-release
+          path: artifacts/aarch64
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -130,3 +138,4 @@ jobs:
             artifacts/x86_64/${{ env.BINARY }}-x86_64-unknown-linux-gnu.zip
             artifacts/x86_64/${{ env.BINARY }}-x86_64-pc-windows-msvc.zip
             artifacts/aarch64/${{ env.BINARY }}-aarch64-apple-darwin.zip
+            artifacts/aarch64/${{ env.BINARY }}-aarch64-unknown-linux-gnu.zip
