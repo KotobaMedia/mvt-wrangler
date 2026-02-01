@@ -2,7 +2,7 @@
 name = "mvt-wrangler"
 description = "A high-performance Rust tool for processing and transforming Mapbox Vector Tiles (MVT) with advanced filtering capabilities. Apply sophisticated spatial and attribute-based filters to slim down your tiles."
 repository = "https://github.com/KotobaMedia/mvt-wrangler"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 license = "MIT"
 exclude = [".github", "tests"]
