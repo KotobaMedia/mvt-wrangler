@@ -6,6 +6,12 @@ A high-performance CLI tool for modifying Mapbox Vector Tile (MVT) archives with
 
 We use this at KotobaMedia to make a Japan-oriented variant of [Protomaps' tiles generated from OpenStreetMap](https://maps.protomaps.com/builds/) without having to download and reprocess OpenStreetMap data from scratch.
 
+## Status
+
+This repository is archived in favor of using [Planetiler](https://github.com/onthegomap/planetiler) directly.
+
+Please use Planetiler instead of `mvt-wrangler`. For a concrete example, see our Planetiler-based fork: [KotobaMedia/basemaps-japan](https://github.com/KotobaMedia/basemaps-japan).
+
 ## Install
 
 - [Binaries](https://github.com/KotobaMedia/mvt-wrangler/releases/latest)
